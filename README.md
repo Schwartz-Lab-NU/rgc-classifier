@@ -1,6 +1,6 @@
 # A classification model for mouse retinal ganglion cells
 ## About
-This supervised model, implemented in C++, was built to classify mouse retinal ganglion cells according to their physiological response properties. Full data, results, and further references are available in the [RGCTypes.org](http://www.rgctypes.org) online gallery.
+This supervised model, implemented in C++, was built to classify mouse retinal ganglion cells according to their physiological response properties. Full data, results, and further references are available in the [RGCTypes.org](http://rgctypes.org) online gallery.
 
 ### Stimulus and Recording
 *spots of light of various sizes and constant luminance centered on the cell's receptive field*
