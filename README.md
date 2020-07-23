@@ -21,10 +21,10 @@ g++ -m64 -std=c++17 -fopenmp -O3 -I\path\to\cblas.h main.cpp treeObjects.cpp -lb
 *to-do: makefile*
 
 ## Dependencies:
-g++ (latest)
-[CBLAS](https://askubuntu.com/a/853516)
-parameter file (see below)
-data files (see below)
+- g++ (latest)
+- [CBLAS](https://askubuntu.com/a/853516)
+- parameter file (see below)
+- data files (see below)
 
 ## Usage:
 ### Building a model from scratch
