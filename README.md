@@ -8,7 +8,7 @@ This supervised model, implemented in C++, was built to classify mouse retinal g
 *additional fluff goes here*
 
 ### Model architecture
-1. An error-correcting output code is used to reduce the multi-class problem into a series of binary ones.Model output takes the form of a probability estimate for class membership.
+1. An error-correcting output code is used to reduce the multi-class problem into a series of binary ones. Model output takes the form of a probability estimate for class membership.
 2. Each binary learner is composed of AdaBoosted decision trees.
 3. Decision trees are trained using node-wise elastic net regression for feature reduction.
 4. Hyperparameters are chosen by Bayesian Optimization using the bayesopt() function in MATLAB.
