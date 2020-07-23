@@ -1,4 +1,6 @@
 # A classification model for mouse retinal ganglion cells
+![tSNE of RGC physiology data](demo/tsne_v2.gif)
+![Average response of ON Delayed cells to stimulus](demo/ond.png)
 ## About
 This supervised model, implemented in C++, was built to classify mouse retinal ganglion cells according to their physiological response properties. Full data, results, and further references are available in the [RGCTypes.org](http://rgctypes.org) online gallery.
 
