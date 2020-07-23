@@ -1,50 +1,49 @@
 # A classification model for mouse retinal ganglion cells
-##About
+## About
 This supervised model, implemented in C++, was built to classify mouse retinal ganglion cells according to their physiological response properties. Full data, results, and further references are available in the [RGCTypes.org](rgctypes.org) online gallery.
 
-###Stimulus and Recording
+### Stimulus and Recording
 *spots of light of various sizes and constant luminance centered on the cell's receptive field*
 *responses are upsampled onto common reference frame using nearest-neighbors imputation and resulting features are penalized based on goodness-of-fit*
 *additional fluff goes here*
 
-###Model architecture
-1. An error-correcting output code is used to reduce the multi-class problem into a series of binary ones
-  - Model output takes the form of a probability estimate for class membership
-2. Each binary learner is composed of AdaBoosted decision trees
-3. Decision trees are trained using node-wise elastic net regression for feature reduction
-4. Hyperparameters are chosen by Bayesian Optimization using the bayesopt() function in MATLAB
+### Model architecture
+1. An error-correcting output code is used to reduce the multi-class problem into a series of binary ones.Model output takes the form of a probability estimate for class membership.
+2. Each binary learner is composed of AdaBoosted decision trees.
+3. Decision trees are trained using node-wise elastic net regression for feature reduction.
+4. Hyperparameters are chosen by Bayesian Optimization using the bayesopt() function in MATLAB.
 
-##Compilation
+## Compilation
 In a unix environment:
 ```
 g++ -m64 -std=c++17 -fopenmp -O3 -I\path\to\cblas.h main.cpp treeObjects.cpp -lblas -lm -o train
 ```
 *to-do: makefile*
 
-##Dependencies:
+## Dependencies:
 g++ (latest)
 [CBLAS](https://askubuntu.com/a/853516)
 parameter file (see below)
 data files (see below)
 
-##Usage:
-###Building a model from scratch
+## Usage:
+### Building a model from scratch
 Not yet implemented
 
-###Training
+### Training
 ```
 $ ./train PARAM_ID NUM_THREADS
 ```
 will train an ensemble using the given parameter file for the next fold, creating a sub-directory named `PARAM_ID/` if it does not yet exist.
 
-###Normalization
+### Normalization
 Not yet implemented
 
-###Testing
+### Testing
 Not yet implemented
 
-##File Formats:
-###Parameter Files (`{PARAM_ID}params.in`)
+## File Formats:
+### Parameter Files (`{PARAM_ID}params.in`)
 Each file contains an ASCII-formatted list of numbers detailing the training parameters:
 - Elastic net parameters
   - Number of features
@@ -68,7 +67,7 @@ Each file contains an ASCII-formatted list of numbers detailing the training par
 - Coding scheme - a (forests-times-labels)-length list of identifiers on {-1, 0, 1}
 - Training time (populated when training has completed)
 
-###Data Files (`fold{#}.in`)
+### Data Files (`fold{#}.in`)
 A binary file containing the PSTH data sampled on a common grid in the following format:
 - Number of cells (uint16)
 - Number of time points (uint16)
@@ -86,7 +85,7 @@ A binary file containing the PSTH data sampled on a common grid in the following
   - Quality of spot size (uint32)
   - PSTH (double array)
 
-###Tree Files (`{PARAM_ID}/fold{#}/forest{#}/tree{#}.out`)
+### Tree Files (`{PARAM_ID}/fold{#}/forest{#}/tree{#}.out`)
 A binary file containing the training results. Currently only implemented for verbose trees:
 
 **Tree**
@@ -123,7 +122,7 @@ A binary file containing the training results. Currently only implemented for ve
 - Number of positive samples (unsigned int)
 - Number of negative samples (unsigned int)
 
-##References
+## References
 1. [Joint 3-D vessel segmentation and centerline extraction using oblique Hough forests with steerable filters](https://pubmed.ncbi.nlm.nih.gov/25461339/)
 2. [Regularization Paths for Generalized Linear Models via Coordinate Descent](https://pubmed.ncbi.nlm.nih.gov/20808728/)
 3. [Obtaining calibrated probability estimates from decision trees and naive Bayesian classifiers](https://scholar.google.com/scholar?q=Zadrozny%2C%20B.%2C%20Elkan%2C%20C.%3A%20Obtaining%20calibrated%20probability%20estimates%20from%20decision%20trees%20and%20naive%20bayesian%20classifiers.%20In%3A%20ICML%20proceedings%2C%20pp.%20609%E2%80%93616%20%282000%29)
