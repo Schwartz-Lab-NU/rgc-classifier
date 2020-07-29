@@ -133,6 +133,8 @@ A binary file containing the training results. Currently only implemented for ve
 - 2 (char, indicating status as leaf)
 - Number of positive samples (unsigned int)
 - Number of negative samples (unsigned int)
+- Score for samples reaching this leaf (double)
+- Total weight that reached this leaf while training (double)
 
 ## References
 1. [Joint 3-D vessel segmentation and centerline extraction using oblique Hough forests with steerable filters](https://pubmed.ncbi.nlm.nih.gov/25461339/)

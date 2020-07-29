@@ -1,10 +1,17 @@
-- [ ] Output normalization for invidual forests
+- [ ] Output normalization for individual forests
 - [ ] Output normalization for ensembles
 - [ ] Interface to Matlab for training
   - [X] Matlab tree class files
   - [ ] Load data into class file
-  - [ ] Background C++ process that receives firing rate from Matlab and returns class
+  - [ ] Background C++ process that receives firing rate from Matlab and returns class membership
+    - [ ] Function to resample raw data onto normalized frame
+    - [ ] Function to classify using interpolation
+      - [ ] Append datafile properties to tree
 - [ ] Generation of parameter files using Bayesian optimization
   - [x] in Matlab
   - [ ] in C++
 - [ ] Closed loop batching optimization process
+- [ ] Fix node indices from double to unsigned int
+- [ ] Cleanup code for consistent typing, iterands...
+  - [ ] use size_t
+  - [ ] const where appropriate
