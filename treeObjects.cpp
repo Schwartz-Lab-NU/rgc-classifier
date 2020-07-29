@@ -10,6 +10,7 @@
 #include <math.h>
 #include <iomanip>
 #include <filesystem>
+#include <cstring> //memset
 
 //loading psth files
 psthSet::psthSet(int N):N(N) {
@@ -40,7 +41,7 @@ psthSet::psthSet(std::ifstream& datafile) {
 	// weights = new double[N];
 	
 	ne = nt * ns;
-	double a = 1./N;
+	// double a = 1./N;
 
 	unsigned char cellNameLength;
 	for (int i=0; i<N; i++) {
@@ -103,7 +104,7 @@ psthSet::psthSet(const psthSet* indata) {
 	data = new psth*[N];
 	// weights = new double[N];
 
-	double a = 1./N;
+	// double a = 1./N;
 
 	for (int i=0; i<N; i++) {
 		data[i] = indata->data[i]; //just copy the pointer... may slow down operation a bit but reduces memory requirement
@@ -231,7 +232,19 @@ psth::~psth() {
 }
 
 //training dependencies
-randomDraws::randomDraws(int thread):mt{std::random_device{}() + thread} { //initialize the twister with a random seed
+randomDraws::randomDraws(int thread):mt{make_twister(thread)} { //initialize the twister with a random seed
+}
+std::mt19937 randomDraws::make_twister(int thread) {
+	//from stack exchange...
+	std::minstd_rand seed_rng(std::random_device{}());
+	std::vector<int> seeds(16+thread);
+	std::generate(seeds.begin(), seeds.end(), seed_rng);
+	std::seed_seq seq(seeds.begin(), seeds.end());
+	return std::mt19937{seq};
+}
+
+
+randomDraws::randomDraws(const randomDraws& rd): mt(rd.mt),dist(rd.dist) { //copy the random state
 }
 
 double randomDraws::getR() { //draw from the generator and update the seed
@@ -276,7 +289,7 @@ void featureList::get(int N, psthSet* data, randomDraws* r, double* sampleWeight
 				delta = data->data[k]->data[ind] - feats[i].mean;
 				feats[i].istd += delta * delta * sampleWeights[k];
 			}
-			
+
 			if (feats[i].istd> 0) { //we will keep these indices and populate the featureItem
 				
 				feats[i].t = indT;
@@ -306,6 +319,49 @@ featureList::~featureList() {
 Tree::Tree() {
 }
 
+Tree::Tree(std::ifstream& datafile) {
+	light = false;
+	//load params
+
+	datafile.read(reinterpret_cast<char*>(&N), sizeof(int));
+
+	params = new paramSet;
+	datafile.read(reinterpret_cast<char*>(params), sizeof(paramSet));
+
+	rd_original = new randomDraws;
+	datafile.read(reinterpret_cast<char*>(rd_original), sizeof(randomDraws));
+	// datafile >> rd_original->mt;
+	// datafile >> rd_original->dist;
+
+
+	rd = new randomDraws;
+	datafile.read(reinterpret_cast<char*>(rd), sizeof(randomDraws));
+	// datafile >> rd->mt;
+	// datafile >> rd->dist;	
+
+	sampleWeights = new double[N];
+	datafile.read(reinterpret_cast<char*>(sampleWeights), N*sizeof(double));
+
+	datafile.read(reinterpret_cast<char*>(&treeWeight), sizeof(double));
+
+	char nodetype = datafile.get();
+	//load tree
+	if (nodetype==1) { //we have a decision node
+		// std::cout << "added a decision node" << std::endl;
+		// decisionNode* n;
+		root = new decisionNode;
+		// root = n;
+		root->tree = this;
+		root->load(datafile);
+		N = root->N;
+	} else if (nodetype==2) {
+		root = new Leaf;
+		root->tree = this;
+		root->load(datafile);
+		N = root->N;
+	}//could be a compact node... 
+}
+
 void Tree::init() {
 	light = true;
 
@@ -316,10 +372,12 @@ void Tree::init() {
 	bestPred = ensemble->bestPred;
 	error = ensemble->error;
 
-	scoreP = ensemble->scoreP;
-	scoreN = ensemble->scoreN;
-	allPos = ensemble->allPos;
-	allNeg = ensemble->allNeg;
+	// scoreP = ensemble->scoreP;
+	// scoreN = ensemble->scoreN;
+	score = ensemble->score;
+	allScores = ensemble->allScores;
+	// allPos = ensemble->allPos;
+	// allNeg = ensemble->allNeg;
 	
 	labels = ensemble->labels;
 	sampleWeights = ensemble->sampleWeights;
@@ -335,15 +393,17 @@ void Tree::init() {
 }
 	
 int Tree::train(psthSet* data) {
-
 	N = data->N;
 	
+	// std::cout << rd->getR() << std::endl; 
 	//make a copy of the current RNG state
 	rd_original = new randomDraws;
+	// std::memset(rd_original, 0, sizeof(randomDraws));
 	*rd_original = *rd;
+	// rd_original->mt = rd->mt;
+	// rd->dist = rd->dist;
 
-
-	decisionNode* n; //we will train as decision nodes
+	// decisionNode* n; //we will train as decision nodes
 	root = new decisionNode(N, this, 0); //don't want this going out of scope!!
 	alloced=true;
 
@@ -357,16 +417,18 @@ int Tree::train(psthSet* data) {
 		err = root->train(data, 1);
 		if (err) {
 			if (nerr<5) {
-			std::cout << "Error training root node (bad feature pick, learner "<< ensemble->current<<"). Trying again." << std::endl;
+			ensemble->buffer << "Error training root node (bad feature pick, learner "<< ensemble->current + 1<<"). Trying again." << std::endl;
 			nerr++;
 		} else {
-			std::cout << "Error training root node (bad feature pick, learner "<< ensemble->current<<"). Lowering minSize and trying again." << std::endl;
+			ensemble->buffer << "Error training root node (bad feature pick, learner "<< ensemble->current + 1<<"). Lowering minSize and trying again." << std::endl;
 			minSize = params->minSize - nerr + 4;
 			nerr++;
 			if (minSize<1) {
 				delete root;
 				root = new Leaf(0);
+				root->tree = this;
 				root->train(data, 1);
+				// print(false,true);
 				// return 1;
 			}
 		}
@@ -380,44 +442,19 @@ int Tree::train(psthSet* data) {
 }
 
 void Tree::save(std::ofstream& datafile) {
+
 	datafile.write(reinterpret_cast<char*>(&N), sizeof(int));
 	datafile.write(reinterpret_cast<char*>(params), sizeof(paramSet));
 	datafile.write(reinterpret_cast<char*>(rd_original), sizeof(randomDraws));
 	datafile.write(reinterpret_cast<char*>(rd), sizeof(randomDraws));
+	// datafile << rd_original->mt;
+	// datafile << rd_original->dist;
+	// datafile << rd->mt;
+	// datafile << rd->dist;
+
 	datafile.write(reinterpret_cast<char*>(sampleWeights), N*sizeof(double));
 	datafile.write(reinterpret_cast<char*>(&treeWeight), sizeof(double));
 	root->save(datafile);
-}
-
-Tree::Tree(std::ifstream& datafile) {
-	light = false;
-	//load params
-
-	datafile.read(reinterpret_cast<char*>(&N), sizeof(int));
-
-	params = new paramSet;
-	datafile.read(reinterpret_cast<char*>(params), sizeof(paramSet));
-
-	rd_original = new randomDraws;
-	datafile.read(reinterpret_cast<char*>(rd_original), sizeof(randomDraws));
-
-	rd = new randomDraws;
-	datafile.read(reinterpret_cast<char*>(rd), sizeof(randomDraws));
-
-	sampleWeights = new double[N];
-	datafile.read(reinterpret_cast<char*>(sampleWeights), N*sizeof(double));
-
-	datafile.read(reinterpret_cast<char*>(&treeWeight), sizeof(double));
-
-	//load tree
-	if (datafile.get()==1) { //we have a decision node
-		decisionNode* n;
-		n = new decisionNode;
-		root = n;
-		root-> tree = this;
-		root->load(datafile);
-		N = root->N;
-	} //could be a compact node...
 }
 
 void Tree::print(bool o, bool v) {
@@ -437,6 +474,10 @@ void Tree::print(bool o, bool v) {
 		}
 	}
 	std::cout << std::endl;
+}
+
+void Tree::test(psthSet* data, double* results, double* vals, int* inds) {
+	root->test(&(data->data[0]), results, vals, inds, data->N, data->nt);
 }
 
 Tree::~Tree() {
@@ -466,7 +507,41 @@ void Node::load(std::ifstream& datafile) {
 void Node::print(int d, int o, bool v) {
 }
 
-int decisionNode::train(psthSet* data, double sumWeights) {
+// bool Node::getMLE() {
+// 	if (MLE==1) {
+// 		return true;
+// 	} else if (MLE==-1) {
+// 		return false;
+// 	} else if (depth > 0) {
+// 		return parent->getMLE();
+// 	} else { // we're at the root node, and we have an even number of pos and neg samples in training set
+// 		if (tree->rd->getR() > 0.5) { //just randomly pick an estimate
+// 			return true;
+// 		} else {
+// 			return false;
+// 		}
+// 	}
+// }
+
+decisionNode::decisionNode(int N_, Tree* tree_, int start_) {
+
+	N=N_;
+	tree=tree_;
+	start = start_;
+
+	//allocate member variables
+	t = new double[tree->params->nFeat];
+	s = new double[tree->params->nFeat];
+	qualityT = new double[tree->params->nFeat];
+	qualityS = new double[tree->params->nFeat];
+	quality = new double[tree->params->nFeat];
+	beta1 = new double[tree->params->nFeat];
+	mean = new double[tree->params->nFeat];
+	istd = new double[tree->params->nFeat];
+}
+
+int decisionNode::train(psthSet* data, double sumWeights_) {
+	sumWeights = sumWeights_;
 
 	featureList* allFeat = tree->features;
 	paramSet* params = tree->params;
@@ -480,10 +555,13 @@ int decisionNode::train(psthSet* data, double sumWeights) {
 	double* bestPred = &(tree->bestPred[start]);
 	bool* error = &(tree->error[start]);
 
-	double* scoreP = &(tree->scoreP[start]);
-	double* scoreN = &(tree->scoreN[start]);
-	double* allPos = &(tree->allPos[start]); //lol...
-	double* allNeg = &(tree->allNeg[start]);
+	// double* scoreP = &(tree->scoreP[start]);
+	// double* scoreN = &(tree->scoreN[start]);
+	// double* allPos = &(tree->allPos[start]); //lol...
+	// double* allNeg = &(tree->allNeg[start]);
+	double* score = &(tree->score[start]);
+	double* allScores = &(tree->allScores[start]); //lol...
+	
 
 	char* labels = &(tree->labels[start]);
 	double* sampleWeights = &(tree->sampleWeights[start]);
@@ -496,9 +574,9 @@ int decisionNode::train(psthSet* data, double sumWeights) {
 	classU = INFINITY;
 
 	//double posFrac = 0;
-	double incr = 1./N;
+	// double incr = 1./N;
 	int ind;
-	int strideI, strideJ, stride;
+	int strideI, strideJ;//, stride;
 	bool cv;
 	// int nnz;
 
@@ -521,7 +599,7 @@ int decisionNode::train(psthSet* data, double sumWeights) {
 			strideI = params->nRepeats * i;
 
 			//pull the data up into a local array
-			for (int j=0;j<N;j++) {
+			for (unsigned int j=0;j<N;j++) {
 				strideJ = params->nFeat * j;
 				for (int k=0;k<params->nFeat;k++) {
 					//normalize to 0 mean, unit sdev
@@ -538,7 +616,7 @@ int decisionNode::train(psthSet* data, double sumWeights) {
 
 			//the regression fit contains the beta parameters as well as the mean and standard deviation (weighted)
 			//we will apply these to the data samples to combine the predictors
-			for (int j=0;j<N;j++) {
+			for (unsigned int j=0;j<N;j++) {
 				pred[j] = 0.;
 				strideJ = params->nFeat * j;
 				//stride = strideI + j;
@@ -548,7 +626,7 @@ int decisionNode::train(psthSet* data, double sumWeights) {
 				}
 			}
 		} else {
-			for (int j=0;j<N;j++) {
+			for (unsigned int j=0;j<N;j++) {
 				ind = allFeat->feats[i].s * data->nt + allFeat->feats[i].t;
 				pred[j] =  (data->data[j]->data[ind] - allFeat->feats[i].mean) * allFeat->feats[i].istd;
 			}
@@ -557,7 +635,7 @@ int decisionNode::train(psthSet* data, double sumWeights) {
 		//with the combined predictors we will pick the threshold using weighted entropy
 		u.get_uncertainty(pred, labels, sampleWeights, inds);
 
-		if (u.r == i && !isinf(u.minU)) { //this iteration is the best so far, so store the results
+		if (u.r == (unsigned int) i && !isinf(u.minU)) { //this iteration is the best so far, so store the results
 			nleft = u.nleft;
 			pleft = u.pleft;
 			wleft = u.wleft;
@@ -612,7 +690,7 @@ int decisionNode::train(psthSet* data, double sumWeights) {
 
 				ind++;
 			}
-			for (int j=0;j<N; j++) {
+			for (unsigned int j=0;j<N; j++) {
 				// std::cout << pred[j] << ",";
 				bestPred[j] = pred[j];
 			}
@@ -626,7 +704,7 @@ int decisionNode::train(psthSet* data, double sumWeights) {
 	}	
 
 	//sort the indices by the regression result for the desired r,c...
-	for (int i=0;i<N;i++) {
+	for (unsigned int i=0;i<N;i++) {
 		inds[i] = i; //initialize sorting...
 	}
 	// stride = u.r*N;
@@ -649,11 +727,12 @@ int decisionNode::train(psthSet* data, double sumWeights) {
 			std::swap(sampleWeights[inds[i]],sampleWeights[inds[inds[i]]]);
 			
 			std::swap(error[inds[i]], error[inds[inds[i]]]);
-			std::swap(scoreP[inds[i]], scoreP[inds[inds[i]]]);
-			std::swap(scoreN[inds[i]], scoreN[inds[inds[i]]]);	
+			std::swap(score[inds[i]], score[inds[inds[i]]]);
+			// std::swap(scoreN[inds[i]], scoreN[inds[inds[i]]]);	
 
-			std::swap(allPos[inds[i]], allPos[inds[inds[i]]]);	
-			std::swap(allNeg[inds[i]], allNeg[inds[inds[i]]]);	
+			std::swap(allScores[inds[i]], allScores[inds[inds[i]]]);	
+			// std::swap(allPos[inds[i]], allPos[inds[inds[i]]]);	
+			// std::swap(allNeg[inds[i]], allNeg[inds[inds[i]]]);	
 
 			std::swap(inds[i], inds[inds[i]]);
 		}
@@ -666,8 +745,8 @@ int decisionNode::train(psthSet* data, double sumWeights) {
 
 	//calculate the pdf, etc. for the subset...
 	//train the left half of the subtree
-	Leaf *ll, *rl;
-	decisionNode *ln, *rn;
+	// Leaf *ll, *rl;
+	// decisionNode *ln, *rn;
 	int err;
 
 	// subData.weights = data->weights;
@@ -718,7 +797,7 @@ int decisionNode::train(psthSet* data, double sumWeights) {
 	subData.N = nright;
 	subData.npos = pright;
 
-	for (int i = nleft;i<N;i++) {
+	for (unsigned int i = nleft;i<N;i++) {
 		subData.data[i-nleft] = data->data[i];
 		sampleWeights[i] *= wright; //renormalize the weights
 		
@@ -764,12 +843,12 @@ int decisionNode::train(psthSet* data, double sumWeights) {
 
 	//unwind the rescalintg
 	wright = 1./wright;
-	for (int i = nleft;i<N;i++) {
+	for (unsigned int i = nleft;i<N;i++) {
 		sampleWeights[i] *= wright; //renormalize the weights
 	}
 	
 	//let the accuracy and misclassificaiton count trickle up
-	accuracy = (left->accuracy*wleft + right->accuracy*wright);
+	accuracy = (left->accuracy*left->sumWeights + right->accuracy*right->sumWeights)/sumWeights;
 	misclassified = left->misclassified + right->misclassified;
 
 	// std::cout << "total weight at node: " << sumWeights << ", acc (weighted) " << accuracy<<", acc (raw): " <<  1 - (double)misclassified/N <<std::endl;
@@ -841,14 +920,14 @@ void decisionNode::load(std::ifstream& datafile) {
 	//load the daughter nodes 
 	int nodeType = datafile.get();
 
-	decisionNode *ln;
-	Leaf *ll;
+	// decisionNode *ln;
+	// Leaf *ll;
 	if (nodeType==1) { //we have a decision node
-		ln = new decisionNode;
-		left = ln;
+		left = new decisionNode;
+		// left = ln;
 	} else if (nodeType==2) { // we have a leaf
-		ll = new Leaf;
-		left = ll;
+		left = new Leaf;
+		// left = ll;
 	}
 
 	left->parent = this;
@@ -860,14 +939,14 @@ void decisionNode::load(std::ifstream& datafile) {
 
 	//now move to the right
 	nodeType = datafile.get();
-	decisionNode *rn;
-	Leaf *rl;
+	// decisionNode *rn;
+	// Leaf *rl;
 	if (nodeType==1) { //we have a decision node
-		rn = new decisionNode;
-		right = rn;
+		right = new decisionNode;
+		// right = rn;
 	} else if (nodeType==2) { // we have a leaf
-		rl = new Leaf;
-		right = rl;
+		right = new Leaf;
+		// right = rl;
 	}
 
 	right->parent = this;
@@ -877,7 +956,9 @@ void decisionNode::load(std::ifstream& datafile) {
 
 	right->load(datafile);
 
-	accuracy = (left->accuracy*left->N + right->accuracy*right->N)/N;
+	sumWeights = right->sumWeights + left->sumWeights;
+	// accuracy = (left->accuracy*left->N + right->accuracy*right->N)/N; //this should depend on sumWeights, not N...
+	accuracy = (left->accuracy*left->sumWeights + right->accuracy*right->sumWeights)/sumWeights;
 	misclassified = left->misclassified + right->misclassified;
 }
 
@@ -888,31 +969,31 @@ void decisionNode::print(int d, int o, bool v) {
 		
 		if (v) {
 			std::cout << std::setw(18)<< "weights: [" << std::setprecision(4); 
-			for (int i =0; i<nnz; i++) {
+			for (unsigned int i =0; i<nnz; i++) {
 				std::cout << std::setw(15)<< beta1[i] << ", ";
 			}
 			std::cout << "]" <<std::endl;
 
 			std::cout << std::setw(18)<< "mean: [";
-			for (int i =0; i<nnz; i++) {
+			for (unsigned int i =0; i<nnz; i++) {
 				std::cout << std::setw(15)<< mean[i] << ", ";
 			}
 			std::cout << "]" <<std::endl;
 
 			std::cout << std::setw(13)<<"std" << "\u207b"<< "\u00b9"<<": [";
-			for (int i =0; i<nnz; i++) {
+			for (unsigned int i =0; i<nnz; i++) {
 				std::cout << std::setw(15) << istd[i] << ", ";
 			}
 			std::cout << "]" <<std::endl;
 
 			std::cout << std::setw(18) <<"index: [" << std::setprecision(0);
-			for (int i =0; i<nnz; i++) {
+			for (unsigned int i =0; i<nnz; i++) {
 				std::cout << "(" << std::setw(6) << s[i] << "," << std::setw(6) << t[i] << "), ";
 			}
 			std::cout << "]" <<std::endl;
 
 			std::cout << std::setw(18)<<"quality: [" <<std::setprecision(2);
-			for (int i =0; i<nnz; i++) {
+			for (unsigned int i =0; i<nnz; i++) {
 				std::cout << "(" <<std::setw(6)<< qualityS[i] << "," << std::setw(6)<<qualityT[i] << "), ";
 			}
 			std::cout << "]" <<std::endl <<std::setprecision(4);
@@ -929,21 +1010,50 @@ void decisionNode::print(int d, int o, bool v) {
 	}
 }
 
-decisionNode::decisionNode(int N_, Tree* tree_, int start_) {
+void decisionNode::test(psth** data, double* results, double* vals, int* inds, int end, int nt) {
+	
+	//calculate values at node
+	for (int i =0; i<end; i++) {
+		vals[i] = 0.;	
+	}
+	for(unsigned int j = 0; j<nnz; j++) {
+		int ind = t[j] + s[j]*nt;
+		double w = beta1[j]*istd[j];
+		double m = mean[j];
+		for (int i=0; i<end; i++) {
+			vals[i] += (data[i]->data[ind]-m)*w;
+		}
+	}
+	
+	//move samples to daughter nodes
+	int i = 0;
+	int last = end;
+	while (i < last) {
+		while (true) {
+			// val = 1; //placeholder
+			if (vals[i]>beta0) {				
+				last--;
+				if (i < last) {
+					std::swap(data[i],data[last]);
+					std::swap(vals[i],vals[last]);
+					std::swap(results[i],results[last]);
+					std::swap(inds[i],inds[last]);
+				} else { //we've reached the end
+					break;
+				}
+			} else { // this index is good, so keep going
+				i++;
+				break;
+			}
+		}
+	}
+	if (last > 0) {
+		left->test(data, results, vals, inds, last, nt);	
+	}
 
-	N=N_;
-	tree=tree_;
-	start = start_;
-
-	//allocate member variables
-	t = new double[tree->params->nFeat];
-	s = new double[tree->params->nFeat];
-	qualityT = new double[tree->params->nFeat];
-	qualityS = new double[tree->params->nFeat];
-	quality = new double[tree->params->nFeat];
-	beta1 = new double[tree->params->nFeat];
-	mean = new double[tree->params->nFeat];
-	istd = new double[tree->params->nFeat];
+	if (i<end) {
+		right->test(&(data[i]), &(results[i]), vals, &(inds[i]), end-last, nt);
+	}
 }
 
 decisionNode::~decisionNode() {
@@ -967,48 +1077,57 @@ Leaf::Leaf(int start_) {
 	start = start_;
 }
 
-
-int Leaf::train(psthSet* data, double sumWeights) {
+int Leaf::train(psthSet* data, double sumWeights_) {
 	N = data->N;
+	sumWeights = sumWeights_;
 
 	//can't we just inherit these from the node now?
 	pos = 0;
 	neg = 0;
-	fracPos = 0.;
-	fracNeg = 0.;
+	double tscore = 0;
+	score = 0;
+
+	// fracPos = 0.;
+	// fracNeg = 0.;
 
 	char* labels = &(tree->labels[start]);
 	bool* error = &(tree->error[start]);
-	double* scoreP = &(tree->scoreP[start]);
-	double* scoreN = &(tree->scoreN[start]);
+	double* scores = &(tree->score[start]);
+	// double* scoreN = &(tree->scoreN[start]);
 	double* sampleWeights = &(tree->sampleWeights[start]);
 
 	accuracy = 0.;
 
-	for (int i=0; i<N; i++) {
+	for (unsigned int i=0; i<N; i++) {
 		if (labels[i]==1) {
 			pos += 1;
-			fracPos += sampleWeights[i];
+			tscore += sampleWeights[i];
+			score += sampleWeights[i];
+		} else {
+			score -= sampleWeights[i];
 		}
 	}
 	neg = N - pos;
-	fracNeg = (1 - fracPos) * sumWeights;
-	fracPos *= sumWeights;
+	
 
-	for (int i=0; i<N; i++) {
-		scoreP[i] = fracPos;
-		scoreN[i] = fracNeg;
+	// score = (2*tscore - 1) * sumWeights;
+	// fracNeg = (1 - fracPos) * sumWeights;
+	// fracPos *= sumWeights;
+
+	for (unsigned int i=0; i<N; i++) {
+		scores[i] = score;
+		// scoreN[i] = fracNeg;
 	}
 
 	// fracPos = ((double) pos) / N;
 	// fracNeg = ((double) neg) / N;
 
-	if (fracPos > fracNeg) {
+	if (score > 0) {
 		MLE = 1;
-		accuracy = fracPos / sumWeights;
+		accuracy = tscore / sumWeights;
 		misclassified = neg;
 
-		for (int i=0; i<N; i++) {
+		for (unsigned int i=0; i<N; i++) {
 			if (labels[i]==1) {
 				error[i] = false;
 			} else {
@@ -1016,12 +1135,12 @@ int Leaf::train(psthSet* data, double sumWeights) {
 			}
 		}
 
-	} else if (fracNeg > fracPos) {
+	} else if (score < 0) {
 		MLE = -1;
-		accuracy = fracNeg / sumWeights;
+		accuracy = 1-(tscore/sumWeights);
 		misclassified = pos;
 
-		for (int i=0; i<N; i++) {
+		for (unsigned int i=0; i<N; i++) {
 			if (labels[i]==1) {
 				error[i] = true;
 			} else {
@@ -1034,11 +1153,10 @@ int Leaf::train(psthSet* data, double sumWeights) {
 		accuracy = .5;
 		misclassified = N/2;
 
-		for (int i=0; i<N; i++) {
-			error[i] = false; //just repot that everything is wrong
+		for (unsigned int i=0; i<N; i++) {
+			error[i] = true; //just report that everything is wrong
 		}
 	}
-
 	// std::cout << "total weight at leaf: " << sumWeights << ", acc (weighted): " << accuracy << ", score(+): " << fracPos << std::endl;
 
 	return 0;
@@ -1051,6 +1169,9 @@ void Leaf::save(std::ofstream& datafile) {
 	//now save the leaf parameters
 	datafile.write(reinterpret_cast<char*>(&pos), sizeof(unsigned int));
 	datafile.write(reinterpret_cast<char*>(&neg), sizeof(unsigned int));
+	datafile.write(reinterpret_cast<char*>(&score), sizeof(double));
+	datafile.write(reinterpret_cast<char*>(&sumWeights), sizeof(double));
+
 }
 
 void Leaf::load(std::ifstream& datafile) {
@@ -1058,19 +1179,22 @@ void Leaf::load(std::ifstream& datafile) {
 	//now save the leaf parameters
 	datafile.read(reinterpret_cast<char*>(&pos), sizeof(unsigned int));
 	datafile.read(reinterpret_cast<char*>(&neg), sizeof(unsigned int));
+	datafile.read(reinterpret_cast<char*>(&score), sizeof(double));
+	datafile.read(reinterpret_cast<char*>(&sumWeights), sizeof(double));
+
 
 	N = pos + neg;
-	fracPos = (double) pos / N;
-	fracNeg = 1-fracPos;
+	// fracPos = (double) pos / N;
+	// fracNeg = 1-fracPos;
 
-	if (pos>neg) {
+	if (score>0) {
 		MLE = 1;
 		misclassified = neg;
-		accuracy = fracPos;
-	} else if (pos<neg) {
+		accuracy = (score + sumWeights)/(2*sumWeights); //score/sumWeights;
+	} else if (score<0) {
 		MLE = -1;
 		misclassified = pos;
-		accuracy = fracNeg;
+		accuracy = 1-((score + sumWeights)/(2*sumWeights)); //1-(score/sumWeights);
 	} else {
 		MLE = 0;
 		misclassified = N/2.;
@@ -1083,6 +1207,28 @@ void Leaf::print(int d, int o, bool v) {
 		std::cout << std::showpos << std::fixed << std::setprecision(2);
 		std::cout << "Leaf (depth "<< depth <<", parent " << o/2 << ", this"<< o << "): " << pos << "pos, " << neg << "neg, accuracy: " <<accuracy << ", misclassified: " << misclassified << std::endl;
 	}	
+}
+
+void Leaf::test(psth** data, double* results, double* vals, int* inds, int end, int nt){
+	// double score = (fracPos-fracNeg)*tree->treeWeight;
+	double scoreOut = score*tree->treeWeight;
+	for (int i=0; i<end; i++) {
+		results[i] += scoreOut;
+	}
+	// if (MLE == -1) {
+	// 	for (int i =0; i<end; i++) {
+	// 		results[i] = false;
+	// 	}
+	// } else if (MLE == 1) {
+	// 	for (int i=0; i<end; i++) {
+	// 		results[i] = true;
+	// 	}
+	// } else {
+	// 	bool r = parent->getMLE()
+	// 	for (int i=0; i<end; i++) {
+	// 		results[i] = r;
+	// 	}
+	// }
 }
 
 regression::regression(paramSet* params, int maxN) {
@@ -1304,7 +1450,7 @@ void regression::do_fit(double* X, char* Y, double* sw, double* fw, int N, int n
 			ind=0;
 			sumWi = 0.;
 			for (int i=0; i<N; i++) {
-				if ((i<npos && i%nFolds == j) || i>=npos && ((i-npos)%nFolds == j)) { //the cell is in the test fold
+				if ((i<npos && i%nFolds == j) || (i>=npos && ((i-npos)%nFolds == j))) { //the cell is in the test fold
 					continue;
 				}
 				stride = inds[i]*F;
@@ -1391,7 +1537,7 @@ void regression::do_fit(double* X, char* Y, double* sw, double* fw, int N, int n
 				//now we want to apply B to the test set to calculate the deviance
 				delta = 0.;
 				for (int k=0; k<N; k++) {
-					if ((k<npos && k%nFolds != j) || k>=npos && ((k-npos)%nFolds != j)) { //the cell is in the test fold
+					if ((k<npos && k%nFolds != j) || (k>=npos && ((k-npos)%nFolds != j))) { //the cell is in the test fold
 						continue;
 					}
 					// if (inds[k]%nFolds != j) { //this sample is in the training fold
@@ -1677,7 +1823,7 @@ void uncertainty::set_params(char* Y, double* W, int thisN, int minSize) {
 	m  = minSize;
 	WP = 0.; //ought to just inherit this from the parent node
 	TP = 0;
-	for (int i=0; i<N; i++) {
+	for (unsigned int i=0; i<N; i++) {
 		if (Y[i] == 1) {
 			WP+= W[i];
 			TP++;
@@ -1688,7 +1834,7 @@ void uncertainty::set_params(char* Y, double* W, int thisN, int minSize) {
 
 void uncertainty::get_uncertainty(double* X, char* Y, double* W, int* inds) { //inputs: X, Y, W, N
 	// std::cout << "in getu: " << N << "," << m << "," << WP << std::endl;
-	for (int i=0;i<N;i++) {
+	for (unsigned int i=0;i<N;i++) {
 		inds[i] = i; //initialize sorting...
 	}
 	std::stable_sort(inds, &(inds[N]), [&X](size_t a, size_t b) {return X[a] < X[b];});
@@ -1714,7 +1860,7 @@ void uncertainty::get_uncertainty(double* X, char* Y, double* W, int* inds) { //
 		}
 	}
 
-	for (int i=m; i<(N-m); i++) {
+	for (unsigned int i=m; i<(N-m); i++) {
 		ii = inds[i];
 		wi = W[ii];
 		tw+=wi;
@@ -1810,12 +1956,12 @@ Ensemble::Ensemble(paramSet* params_, short unsigned int N_, int thread_, std::f
 	pred = new double[N];
 	bestPred = new double[N];
 	error = new bool[N];
-	scoreP = new double[N];
-	scoreN = new double[N];
-
-	allPos = new double[N];
-	allNeg = new double[N];
-
+	score = new double[N];
+	// scoreP = new double[N];
+	// scoreN = new double[N];
+	allScores = new double[N];
+	// allPos = new double[N];
+	// allNeg = new double[N];
 
 	labels = new char[N];
 	sampleWeights = new double[N];
@@ -1825,12 +1971,14 @@ Ensemble::Ensemble(paramSet* params_, short unsigned int N_, int thread_, std::f
 	accuracy = new double[params->maxTrees];
 
 	rd = new randomDraws(thread);
+	// std::memset(rd, 0, sizeof(randomDraws));
+		
 	features = new featureList(params->nFeat*params->nRepeats); //randomly draws features from the dataset
 
 	reg = new regression(params, N);
 }
 
-int Ensemble::train(psthSet* data, int i) {
+int Ensemble::train(psthSet* data, int* sampleCounts, int i) {
 	// for (int i=0; i<params->ensembleSize; i++) {
 	current = i;
 
@@ -1855,22 +2003,36 @@ int Ensemble::train(psthSet* data, int i) {
 		} 
 		j++;
 	}
-	std::cout << std::endl;
+	// std::cout << std::endl;
 
 	data->N = N-badCount; // we will ignore the cells at the tail end 
-	double a = 1./(N-badCount);
+	// double a = 1./(N-badCount);
+
+	double a = 0.;
+
 	for (j=0;j<N-badCount;j++) {
-		if (ecoc[stride+data->data[j]->label-1] == 1) {
+		int thisLabel = data->data[j]->label-1;
+		if (ecoc[stride+thisLabel] == 1) {
 			data->npos++;
 			labels[j] = 1;
 		} else {
 			labels[j] = 0;
 		}
-
-		allPos[j] = 0.;
-		allNeg[j] = 0.;
-		sampleWeights[j] = a; //initialize the weights
+		allScores[j] = 0.;
+		// allNeg[j] = 0.;
+		
+		a+= 1./sampleCounts[thisLabel];
 	}
+	a = 1./a;
+
+	// double testing = 0.;
+	for (j=0;j<N-badCount;j++) {
+		int thisLabel = data->data[j]->label-1;
+		sampleWeights[j] = 1./sampleCounts[thisLabel] * a; //initialize the weights
+		// testing+= sampleWeights[j];
+		// std::cout << sampleWeights[j] << ",";
+	}
+	// std::cout << std::endl << testing << std::endl;
 
 	//name/mkdir forests[i].treeDir
 	forests[i].params = params;
@@ -1880,14 +2042,94 @@ int Ensemble::train(psthSet* data, int i) {
 	std::filesystem::create_directories(forests[i].treeDir);
 	err = forests[i].train(data, i);
 	if (err) {
-		std::cout << "Thread[" << thread+1 << "], " << "Forest["<< i+1 << "/" << params->ensembleSize << "]  -> error!!" << std::endl;
+		buffer << "Thread[" << thread+1 << "], " << "Forest["<< i+1 << "/" << params->ensembleSize << "]  -> error!!" << std::endl;
 	
 		return 1;
 	}
 
-	std::cout << "Thread[" << thread+1 << "], " << "Forest["<< i+1 << "/" << params->ensembleSize << "]  -> completed" << std::endl;
+	buffer << "Thread[" << thread+1 << "], " << "Forest["<< i+1 << "/" << params->ensembleSize << "]  -> completed" << std::endl;
 	return 0;
 	// }
+}
+
+void Ensemble::test(psthSet* data, char* pred) {
+	double* vals = new double[N]; //for intermediate calculation at node
+	double* results = new double[N]; // results from forest
+	int* inds = new int[N];
+
+	for (int i=0; i<N; i++) {
+		inds[i] = i;
+	}
+
+	//dev -> 0.;
+	double* dev = new double[N*params->nLabels]();
+
+	for (int i=0; i<params->ensembleSize; i++) {
+		//set results to 0 
+		std::memset(results, 0, N*sizeof(double));
+		int stride = i*params->nLabels;
+		
+		// create forest
+		forests = new Forest;
+		forests->params = params;
+		forests->ensemble = this;
+		forests->treeDir = rootDir / ("forest" + std::to_string(i+1));
+		
+
+		forests->test(data, results, vals, inds);
+
+		//check that the forest classification is working properly
+		double acc = 0.;
+		double nn = 0;
+		double npr = 0;
+		for (int j=0;j<N;j++) {
+			if (ecoc[stride+data->data[j]->label-1] >0) {
+				nn+=1;
+				if (results[j]>=0) {
+					acc+=1.;	
+				}
+			} else if (ecoc[stride+data->data[j]->label-1]<0) {
+				nn+=1;
+				if (results[j]<0) {
+					acc+=1.;
+				}
+			}
+			if (results[j]>0) {
+				npr+=1;
+			}
+			// std::cout << inds[j] << ",";
+		}
+		std::cout << acc/nn << "(" << nn <<" [" << npr <<"])"<< std::endl;
+
+		for (int j=0; j<params->nLabels; j++) {
+			if (ecoc[stride+j] != 0) { 
+				for (int k = 0; k< N; k++) {
+					// std::cout << "("<<ecoc[stride+j]<<","<<results[k]<<","<<log(1 + exp(-2 * ecoc[stride+j] * results[k])) << "),";
+
+					dev[k*params->nLabels + j] += log(1 + exp(-2 * ecoc[stride+j] * results[inds[k]]));
+
+					// dev[k*params->nLabels + j] -= ecoc[stride+j] * results[k];
+					
+					// dev(L,N) += log(1 + exp(-2*ecoc(forest,L)*results(N))) / (2*log(2))
+				}
+			}
+		}
+		// std::cout << std::endl;
+		delete forests;
+	}
+
+	for (int k=0; k<N; k++) {
+		for (int j=0; j<params->nLabels; j++) {
+			std::cout << dev[k*params->nLabels+j] << ",";
+		}
+		std::cout << std::endl;
+		pred[k] = std::min_element(&(dev[k*params->nLabels]),&(dev[(k+1)*params->nLabels])) - &(dev[k*params->nLabels]);
+	}
+
+	delete[] results;
+	delete[] dev;
+	delete[] vals;
+	delete[] inds;
 }
 
 Ensemble::~Ensemble() {
@@ -1901,10 +2143,11 @@ Ensemble::~Ensemble() {
 	delete[] featureWeights;
 	// delete[] treeWeights;
 	delete[] accuracy;
-	delete[] scoreP;
-	delete[] scoreN;
-	delete[] allPos;
-	delete[] allNeg;
+	delete[] score;
+	// delete[] scoreP;
+	// delete[] scoreN;
+	// delete[] allPos;
+	// delete[] allNeg;
 	delete rd;
 	delete features;
 	delete reg;
@@ -1927,20 +2170,22 @@ int Forest::train(psthSet* data, int f) {
 	bool improved;
 
 	double* accuracy = ensemble->accuracy;
-	double* allPos = ensemble->allPos;
-	double* allNeg = ensemble->allNeg;
+	// double* allPos = ensemble->allPos;
+	// double* allNeg = ensemble->allNeg;
+	double* allScores = ensemble->allScores;
 
 
 	// double allTreeWeights = 0.;
 	std::ofstream treefile;
 
-	double* scoreP = ensemble->scoreP;
-	double* scoreN = ensemble->scoreN;
+	double* score = ensemble->score;
+	// double* scoreP = ensemble->scoreP;
+	// double* scoreN = ensemble->scoreN;
 	char* labels = ensemble->labels;
 
 	double a = 1./data->N;
 
-	int err = 0;
+	int err;
 
 	//do training
 	while (true) {
@@ -1990,16 +2235,17 @@ int Forest::train(psthSet* data, int f) {
 
 		accuracy[nTrees] = 0.;
 		for (int i=0; i<data->N; i++) {
-			allPos[i] += scoreP[i]*trees->treeWeight; //if tree weight is negative it subtracts from both pos and neg...
-			allNeg[i] += scoreN[i]*trees->treeWeight;
+			// allPos[i] += scoreP[i]*trees->treeWeight; //if tree weight is negative it subtracts from both pos and neg...
+			// allNeg[i] += scoreN[i]*trees->treeWeight;
+			allScores[i] += score[i]*trees->treeWeight;
 
 			// std::cout <<"("<< allPos[i] << "," << allNeg[i] << "," << (int) labels[i] << "),"; 
-			accuracy[nTrees] += ((labels[i]==1 && allPos[i]>allNeg[i]) || (labels[i]==0 && allPos[i]<allNeg[i]))? 1 : 0;
+			accuracy[nTrees] += labels[i] ^ (allScores[i]<0); //this version does the xor //((labels[i]==1)*(allScores[i]>=0)) + ((labels[i]==0)*(allScores[i]<0));
 		}
 		// std::cout << std::endl;
 		accuracy[nTrees] *=a;
 		
-		std::cout << "Thread[" << ensemble->thread+1 << "], Forest[" << f+1 <<"/" << params->ensembleSize << "], Tree[" << nTrees+1 <<"/"<< params->maxTrees << "] -> " << accuracy[nTrees]*100 <<"% accurate " << std::endl;
+		ensemble->buffer << "Thread[" << ensemble->thread+1 << "], Forest[" << f+1 <<"/" << params->ensembleSize << "], Tree[" << nTrees+1 <<"/"<< params->maxTrees << "] -> " << accuracy[nTrees]*100 <<"% accurate " << std::endl;
 		// std::cout << "this tree acc: " << trees->accuracy << ", overall: " << accuracy[nTrees] << std::endl;
 		
 		sumWeights = 0.;
@@ -2018,6 +2264,32 @@ int Forest::train(psthSet* data, int f) {
 		nTrees++;
 	}
 	return 0;
+}
+
+void Forest::test(psthSet* data, double* results, double* vals, int* inds) {
+	
+	std::ifstream treefile;
+	int i=1;
+	while (true) {
+		//load the tree
+		// std::cout << "loading tree... " << std::endl;
+		treefile.open(treeDir / ("tree" + std::to_string(i) + ".out"), std::ios::binary);
+		if (!treefile.good()) {
+			break; //we've read all the trees
+		}
+		trees = new Tree(treefile);
+		treefile.close();
+		// std::cout << treeDir / ("tree" + std::to_string(i) + ".out")<< std::endl;
+		// std::cout << trees->treeWeight << std::endl;
+
+		// trees->print(false, false);
+		//add the score to the results		
+		trees->test(data, results, vals, inds);
+
+		//clean up
+		delete trees;
+		i++;
+	}
 }
 
 Forest::~Forest() {

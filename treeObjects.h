@@ -5,6 +5,7 @@
 #include <fstream>
 #include <cblas.h>
 #include <filesystem>
+#include <sstream>
 
 class randomDraws {
 public:
@@ -12,7 +13,9 @@ public:
 	std::uniform_real_distribution<double> dist{std::uniform_real_distribution<double>(0.0, 1.0)};
 
 	randomDraws(int thread);
-	randomDraws() {};
+	randomDraws(const randomDraws& rd);
+	randomDraws(){};
+	std::mt19937 make_twister(int thread);
 
 	double getR();
 	void getP(int* ind, int N);
@@ -32,7 +35,7 @@ public:
 	char* qualityT;
 
 	~psth();
-	psth() {};
+	psth(){};
 	// psth(const psth& indata, int nt, int ns);
 };
 
@@ -288,6 +291,8 @@ public:
 	unsigned int N; //number of cells at this node
 	int misclassified; //number of misclassified cells at this node
 	double accuracy; //accuracy at this node
+	char MLE; //-1 for neg, 0 for equal, 1 for pos
+	double sumWeights;
 
 	Node* parent; //pointer to parent node
 	Tree* tree;
@@ -297,8 +302,8 @@ public:
 
 	Node() {};
 	// virtual void train(psthSet* data, paramSet* params, randomDraws* rd, regression* reg);
-	virtual int train(psthSet* data, double sumWeights);
-
+	virtual int train(psthSet* data, double sumWeights_);
+	virtual void test(psth** data, double* results, double* vals, int* inds, int end, int nt){};
 	virtual void save(std::ofstream& datafile);
 	virtual void load(std::ifstream& datafile);
 	virtual void print(int d, int o, bool v);
@@ -310,14 +315,16 @@ class Leaf : public Node{
 public:
 	unsigned int pos;
 	unsigned int neg;
-	double fracPos;
-	double fracNeg;
-	char MLE; //-1 for neg, 0 for equal, 1 for pos
+	double score;
+	// double fracPos;
+	// double fracNeg;
 	int start; //for training...
+	// double sumWeights;
 
 	Leaf(){};
 	Leaf(int start_);
-	int train(psthSet* data, double sumWeights);
+	int train(psthSet* data, double sumWeights_);
+	void test(psth** data, double* results, double* vals, int* inds, int end, int nt);
 	void save(std::ofstream& datafile);
 	void load(std::ifstream& datafile);
 	void print(int d, int o, bool v);
@@ -326,7 +333,7 @@ public:
 // 
 class compactDecisionNode : public Node{
 public:
-	double* t;
+	double* t; //shoud be int!!!
 	double* s;
 
 	double* beta1;
@@ -357,7 +364,8 @@ public:
 
 	decisionNode(int N_, Tree* tree_, int start_);
 	decisionNode(){};
-	int train(psthSet* data, double sumWeights);
+	int train(psthSet* data, double sumWeights_);
+	void test(psth** data, double* results, double* vals, int* inds, int end, int nt);
 	void save(std::ofstream& datafile);
 	void load(std::ifstream& datafile);
 	void print(int d, int o, bool v);
@@ -373,10 +381,12 @@ public:
 	double* pred;
 	double* bestPred;
 	bool* error;
-	double* scoreP;
-	double* scoreN;
-	double* allPos;
-	double* allNeg;
+	double* score;
+	// double* scoreP;
+	// double* scoreN;
+	// double* allPos;
+	// double* allNeg;
+	double* allScores;
 
 	char* labels;
 	double* sampleWeights;
@@ -405,6 +415,7 @@ public:
 
 	void init();
 	int train(psthSet* data);
+	void test(psthSet* data, double* results, double* vals, int* inds);
 	void save(std::ofstream& datafile);
 	void print(bool o, bool v);
 };
@@ -434,34 +445,37 @@ public:
 	Forest();
 	Forest(paramSet* params_, Ensemble* ens_);
 	int train(psthSet* data, int f); //and some more stuff...
+	void test(psthSet* data, double* results, double* vals, int* inds);
 	~Forest();
 };
 
 class Ensemble {
 public:
-	int N;
 	// char* coding;
 	// int nLabels;
+
+	paramSet* params;
+	int N;
+	int thread;
+	std::filesystem::path rootDir;
 	int* ecoc;
+
 	int current;
 
-	int thread;
-
 	Forest* forests;
-	paramSet* params;
-
 
 	int* inds;
 	double* feat;
 	double* pred;
 	double* bestPred;
 	bool* error;
-	double* scoreP;
-	double* scoreN;
+	double* score;
+	// double* scoreP;
+	// double* scoreN;
 
-	double* allPos;
-	double* allNeg;
-
+	// double* allPos;
+	// double* allNeg;
+	double* allScores;
 
 	char* labels; //really can be bool at this point, but same memory space
 	double* sampleWeights;
@@ -474,11 +488,14 @@ public:
 	featureList* features;
 	regression* reg;
 
-	std::filesystem::path rootDir;
+	std::stringstream buffer;
+
 
 	//Ensemble(paramSet* params_, int nLabels_);
 	Ensemble(paramSet* params_, short unsigned int N_, int thread_, std::filesystem::path rootDir_, int* ecoc_);
-	int train(psthSet* data, int i);
+	Ensemble(){};
+	int train(psthSet* data, int* sampleCounts, int i);
+	void test(psthSet* data, char* pred);
 	~Ensemble();
 
 };
