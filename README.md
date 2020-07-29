@@ -16,11 +16,7 @@ This supervised model, implemented in C++, was built to classify mouse retinal g
 4. Hyperparameters are chosen by Bayesian Optimization using the bayesopt() function in MATLAB.
 
 ## Compilation
-In a unix environment:
-```
-g++ -m64 -std=c++17 -fopenmp -O3 -I\path\to\cblas.h main.cpp treeObjects.cpp -lblas -lm -o train
-```
-*to-do: makefile*
+Compile using the provided makefile. Edit `$(CBLAS)` to the path to the CBLAS header file, or call make using `PATH=/path/to/cblas/`. Optionally compile using `make debug` to enable debugging.
 
 ## Dependencies:
 - g++ (latest)
@@ -36,13 +32,27 @@ Not yet implemented
 ```
 $ ./train PARAM_ID NUM_THREADS
 ```
-will train an ensemble using the given parameter file for the next fold, creating a sub-directory named `PARAM_ID/` if it does not yet exist.
+will train an ensemble using the given parameter file for the next fold, creating a sub-directory named `PARAM_ID/` if it does not yet exist. Learners are trained in parallel using `NUM_THREADS` workers.
+
+```
+$./ecoc PARAM_ID
+```
+will append an ECOC coding matrix to the corresponding parameter file if one does not already exist.
 
 ### Normalization
 Not yet implemented
 
 ### Testing
-Not yet implemented
+```
+$ ./test PARAM_ID TRAIN_FOLD TEST_FOLD
+```
+loads the trees from the corresponding directory and attempts to classify the data in the corresponding data file. 
+
+### Printing
+```
+$ ./print PARAMS_ID FOLD_ID FOREST_ID TREE_ID
+```
+will print the structure of the corresponding tree.
 
 ## File Formats:
 ### Parameter Files (`{PARAM_ID}params.in`)

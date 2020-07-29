@@ -4,7 +4,7 @@
 #include <string>
 #include <filesystem>
 
-//usage: ./test PARAMS_ID FOLD# FOREST# TREE#
+//usage: ./print PARAMS_ID FOLD# FOREST# TREE#
 int main(int argc, char* argv[]) {
 
 	std::filesystem::path treefile = (std::string)argv[1]

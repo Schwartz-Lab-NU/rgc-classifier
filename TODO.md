@@ -1,0 +1,10 @@
+- [ ] Output normalization for invidual forests
+- [ ] Output normalization for ensembles
+- [ ] Interface to Matlab for training
+  - [X] Matlab tree class files
+  - [ ] Load data into class file
+  - [ ] Background C++ process that receives firing rate from Matlab and returns class
+- [ ] Generation of parameter files using Bayesian optimization
+  - [x] in Matlab
+  - [ ] in C++
+- [ ] Closed loop batching optimization process
