@@ -48,9 +48,9 @@ will train a calibration model corresponding to the next pair of folds. Outputs 
 
 ### Testing
 ```
-$ ./test PARAM_ID TRAIN_FOLD TEST_FOLD
+$ ./test PARAM_ID TRAIN_FOLD TEST_FOLD TRANSFORM_FOLD
 ```
-loads the trees from the training fold directory and attempts to classify the data in the test data file. The classification loss (class-wise; mean squared error for calibrated models, accuracy for uncalibrated models) is recorded in the parameters file.
+loads the trees from the training fold directory and attempts to classify the data in the test data file. `TRANSFORM_FOLD` is optional. The classification loss (class-wise; mean squared error for calibrated models, accuracy for uncalibrated models) is recorded in the parameters file.
 
 ### Printing
 ```
