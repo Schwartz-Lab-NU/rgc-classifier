@@ -1,25 +1,22 @@
-CBLAS = "c:/msys64/mingw64/include/OpenBLAS"
-FLAGS =
-
-all: FLAGS += -O3
+all: FLAGS = -O3
 all: test transform train print ecoc
-debug: FLAGS += -g
+debug: FLAGS = -g
 debug: test transform train print ecoc
 
 train: treeObjects.o train.cpp
-	g++ -m64 -std=c++17 -static-libgcc -static-libstdc++ -fopenmp -I$(CBLAS) train.cpp treeObjects.o -lblas -lm -o train $(FLAGS)
+	g++ -m64 -std=c++17 -static-libgcc -static-libstdc++ -fopenmp train.cpp treeObjects.o -lblas -lm -o train $(FLAGS)
 
 transform: treeObjects.o transform.cpp
-	g++ -m64 -std=c++17 -static -I$(CBLAS) transform.cpp treeObjects.o -lblas -lm -o transform $(FLAGS)
+	g++ -m64 -std=c++17 -static transform.cpp treeObjects.o -lblas -lm -o transform $(FLAGS)
 
 test: treeObjects.o test.cpp
-	g++ -m64 -std=c++17 -static -I$(CBLAS) test.cpp treeObjects.o -lblas -lm -o test $(FLAGS)
+	g++ -m64 -std=c++17 -static test.cpp treeObjects.o -lblas -lm -o test $(FLAGS)
 
 print: treeObjects.o print.cpp
-	g++ -m64 -std=c++17 -static -I$(CBLAS) print.cpp treeObjects.o -lblas -lm -o print $(FLAGS)
+	g++ -m64 -std=c++17 -static print.cpp treeObjects.o -lblas -lm -o print $(FLAGS)
 
 ecoc: treeObjects.o ecoc.cpp
-	g++ -m64 -std=c++17 -static -I$(CBLAS) ecoc.cpp treeObjects.o -lblas -lm -o ecoc $(FLAGS)	
+	g++ -m64 -std=c++17 -static ecoc.cpp treeObjects.o -lblas -lm -o ecoc $(FLAGS)	
 
 treeObjects.o: treeObjects.cpp
 	g++ -m64 -std=c++17 -static -c treeObjects.cpp $(FLAGS)

@@ -17,11 +17,11 @@ Under construction
 4. Hyperparameters are chosen by Bayesian Optimization using the bayesopt() function in MATLAB.
 
 ## Compilation
-Compile using the provided makefile. If the CBLAS header file is not in the system include path, edit `$(CBLAS)` accordingly, or call make using `CBLAS=/path/to/cblas/`. Optionally compile using `make debug` to enable debugging.
+Compile using the provided makefile. Optionally compile using `make debug` to enable debugging.
 
 ## Dependencies:
 - g++ (latest)
-- [CBLAS](https://askubuntu.com/a/853516)
+- BLAS
 - parameter file (see below)
 - data files (see below)
 

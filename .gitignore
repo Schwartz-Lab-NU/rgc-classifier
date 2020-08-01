@@ -1,2 +1,9 @@
 0514/
 .vscode/
+*.in
+ecoc
+print
+test
+train
+transform
+treeObjects.o
