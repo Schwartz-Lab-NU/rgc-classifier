@@ -1,5 +1,5 @@
-- [ ] Output normalization for individual forests
-- [ ] Output normalization for ensembles
+- [X] Output normalization for individual forests
+- [X] Output normalization for ensembles
 - [ ] Interface to Matlab for training
   - [X] Matlab tree class files
   - [ ] Load data into class file

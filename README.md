@@ -5,18 +5,19 @@
 This supervised model, implemented in C++, was built to classify mouse retinal ganglion cells according to their physiological response properties. Full data, results, and further references are available in the [RGCTypes.org](http://rgctypes.org) online gallery.
 
 ### Stimulus and Recording
+Under construction
 *spots of light of various sizes and constant luminance centered on the cell's receptive field*
 *responses are upsampled onto common reference frame using nearest-neighbors imputation and resulting features are penalized based on goodness-of-fit*
 *additional fluff goes here*
 
 ### Model architecture
-1. An error-correcting output code is used to reduce the multi-class problem into a series of binary ones. Model output takes the form of a probability estimate for class membership.
+1. An error-correcting output code is used to reduce the multi-class problem into a series of binary ones. Model output takes the form of a posterior probability estimate for class membership given a uniform prior.
 2. Each binary learner is composed of AdaBoosted decision trees.
 3. Decision trees are trained using node-wise elastic net regression for feature reduction.
 4. Hyperparameters are chosen by Bayesian Optimization using the bayesopt() function in MATLAB.
 
 ## Compilation
-Compile using the provided makefile. Edit `$(CBLAS)` to the path to the CBLAS header file, or call make using `PATH=/path/to/cblas/`. Optionally compile using `make debug` to enable debugging.
+Compile using the provided makefile. If the CBLAS header file is not in the system include path, edit `$(CBLAS)` accordingly, or call make using `CBLAS=/path/to/cblas/`. Optionally compile using `make debug` to enable debugging.
 
 ## Dependencies:
 - g++ (latest)
@@ -35,24 +36,27 @@ $ ./train PARAM_ID NUM_THREADS
 will train an ensemble using the given parameter file for the next fold, creating a sub-directory named `PARAM_ID/` if it does not yet exist. Learners are trained in parallel using `NUM_THREADS` workers.
 
 ```
-$./ecoc PARAM_ID
+$ ./ecoc PARAM_ID
 ```
-will append an ECOC coding matrix to the corresponding parameter file if one does not already exist.
+will append an ECOC coding matrix to the corresponding parameter file if one does not already exist; otherwise it will create a new coding matrix and delete the old records of training and normalization.
 
 ### Normalization
-Not yet implemented
+```
+$ ./transform PARAM_ID
+```
+will train a calibration model corresponding to the next pair of folds. Outputs of the calibrated model take on a 
 
 ### Testing
 ```
 $ ./test PARAM_ID TRAIN_FOLD TEST_FOLD
 ```
-loads the trees from the corresponding directory and attempts to classify the data in the corresponding data file. 
+loads the trees from the training fold directory and attempts to classify the data in the test data file. The classification loss (class-wise; mean squared error for calibrated models, accuracy for uncalibrated models) is recorded in the parameters file.
 
 ### Printing
 ```
 $ ./print PARAMS_ID FOLD_ID FOREST_ID TREE_ID
 ```
-will print the structure of the corresponding tree.
+will print the structure of the corresponding tree to the command line.
 
 ## File Formats:
 ### Parameter Files (`{PARAM_ID}params.in`)
@@ -76,8 +80,14 @@ Each file contains an ASCII-formatted list of numbers detailing the training par
   - Probability of negative class membership
   - Probability of positive class membership
   - Number of unique training labels
-- Coding scheme - a (forests-times-labels)-length list of identifiers on {-1, 0, 1}
-- Training time (populated when training has completed)
+- Coding scheme - a (labels-by-forests) matrix of identifiers on {-1, 0, 1}
+- Training time (in seconds-times-threads)
+- Transform status (1 indicating a completed transform)
+- Classification result - a comma-separated list
+  - Training fold
+  - Testing fold
+  - Transform fold (if applicable)
+  - Loss (class-weighted; mean squared error for calibrated models, accuracy for uncalibrated models)
 
 ### Data Files (`fold{#}.in`)
 A binary file containing the PSTH data sampled on a common grid in the following format:
@@ -136,9 +146,16 @@ A binary file containing the training results. Currently only implemented for ve
 - Score for samples reaching this leaf (double)
 - Total weight that reached this leaf while training (double)
 
+### Normalization Files (`{PARAM_ID}/fold{#}/forest{#}/fold{#}.LUT`)
+A binary file containing the mapping from the forest output onto [0,1], representing the probability of positive class membership
+- Number of samples used to create mapping (unsigned short int)
+- AdaBoost scores (double array)
+- Probability (double array)
+
 ## References
 1. [Joint 3-D vessel segmentation and centerline extraction using oblique Hough forests with steerable filters](https://pubmed.ncbi.nlm.nih.gov/25461339/)
 2. [Regularization Paths for Generalized Linear Models via Coordinate Descent](https://pubmed.ncbi.nlm.nih.gov/20808728/)
 3. [Obtaining calibrated probability estimates from decision trees and naive Bayesian classifiers](https://scholar.google.com/scholar?q=Zadrozny%2C%20B.%2C%20Elkan%2C%20C.%3A%20Obtaining%20calibrated%20probability%20estimates%20from%20decision%20trees%20and%20naive%20bayesian%20classifiers.%20In%3A%20ICML%20proceedings%2C%20pp.%20609%E2%80%93616%20%282000%29)
 4. [Transforming classifier scores into accurate multiclass probability estimates](https://scholar.google.com/scholar?q=Transforming+classifier+scores+into+accurate+multiclass+probability+estimates+B+Zadrozny,+C+Elkan&hl=en&as_sdt=0&as_vis=1&oi=scholart)
-5. [Multi-class adaboost](https://scholar.google.com/scholar?hl=en&as_sdt=0%2C14&as_vis=1&q=Multi-class+adaboost+T+Hastie%2C+S+Rosset%2C+J+Zhu%2C+H+Zou+&btnG=)
+5. [Reducing multiclass to binary by coupling probability estimates](https://scholar.google.com/scholar?hl=en&as_sdt=0%2C14&q=B.+Zadrozny.+Reducing+multiclass+to+binary+by+coupling+probability+estimates&btnG=)
+6. [Multi-class adaboost](https://scholar.google.com/scholar?hl=en&as_sdt=0%2C14&as_vis=1&q=Multi-class+adaboost+T+Hastie%2C+S+Rosset%2C+J+Zhu%2C+H+Zou+&btnG=)

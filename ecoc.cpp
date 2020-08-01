@@ -23,9 +23,9 @@ int main(int argc, char* argv[]) {
 	p.print();
 
 	if (!paramfile.eof()) {
-		std::cout << "ECOC matrix already exists." << std::endl;
-		paramfile.close();
-		return 0;
+		std::cout << "ECOC matrix already exists. Previous results will be overwritten." << std::endl;
+		// paramfile.close();
+		// return 0;
 	}
 	paramfile.close();
 
@@ -40,19 +40,23 @@ int main(int argc, char* argv[]) {
 		return 0;
 	}
 
-	paramfile.open((std::string)argv[1] + "params.in", std::ios::app);
-	paramfile << std::endl;
+
+	std::ofstream paramsout;
+	paramsout.open((std::string)argv[1] + "params.in");
+	p.print(paramsout); //re-write the params...
+
+	paramsout << std::endl;
 	for (int i=0;i<p.ensembleSize;i++) {
 		int stride = i*p.nLabels;
 		for (int j=0;j<p.nLabels;j++) {
-			paramfile << std::setw(3)<< ecoc[stride+j];
+			paramsout << std::setw(3)<< ecoc[stride+j];
 		}
 		if (i<p.ensembleSize-1) {
-			paramfile << std::endl;
+			paramsout << std::endl;
 		}	
 	}
 
-	paramfile.close();
+	paramsout.close();
 	delete[] ecoc;
 	std::cout << "Successfully wrote ECOC matrix for " << (std::string) argv[1] << std::endl;
 	return 0;
@@ -253,7 +257,7 @@ bool visit(int l, int k1, int k2, int* ecoc, bool* visited, bool* traversed, int
 	//l is the current column
 	//visited indicates the legal columns
 
-	bool success = false;
+	// bool success = false;
 	if (ecoc[l*K+k1]) {
 		if (ecoc[l*K+k2] && ecoc[l*K+k1] != ecoc[l*K+k2]) {
 			return true; //we've reached the end
@@ -272,7 +276,7 @@ bool visit(int l, int k1, int k2, int* ecoc, bool* visited, bool* traversed, int
 					traversed[k] = true; //we don't need to revisit this row on this route... otherwise would end up in inifinite loop
 					for (int ll=0;ll<L;ll++) {
 						if (!visited[ll] && ecoc[ll*K+k]) {
-							success = visit(ll, k, k2, ecoc, visited, traversed, K, L, unvisited);
+							bool success = visit(ll, k, k2, ecoc, visited, traversed, K, L, unvisited);
 							if (success) { //we managed to link these rows
 								return true;
 							}

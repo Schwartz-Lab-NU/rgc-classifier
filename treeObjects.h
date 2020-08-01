@@ -136,6 +136,7 @@ public:
 	paramSet() {};
 	paramSet(std::fstream& paramfile);
 	void print();
+	void print(std::ofstream&);
 };
 
 class regression {
@@ -446,6 +447,7 @@ public:
 	Forest(paramSet* params_, Ensemble* ens_);
 	int train(psthSet* data, int f); //and some more stuff...
 	void test(psthSet* data, double* results, double* vals, int* inds);
+	void test(psthSet* data, double* results, double* vals, int* inds, int* saveN);
 	~Forest();
 };
 
@@ -459,6 +461,8 @@ public:
 	int thread;
 	std::filesystem::path rootDir;
 	int* ecoc;
+
+	bool light = true;
 
 	int current;
 
@@ -495,7 +499,13 @@ public:
 	Ensemble(paramSet* params_, short unsigned int N_, int thread_, std::filesystem::path rootDir_, int* ecoc_);
 	Ensemble(){};
 	int train(psthSet* data, int* sampleCounts, int i);
-	void test(psthSet* data, char* pred);
+	double test(psthSet* data, char* pred, int* sampleCounts, char transform);
+	void normalize(double* R, double* X, double* Y, size_t N_);
+	void normalize(psthSet* data, int* sampleCounts, int f);
+	double normalize(double*, int*, int*, int*, char*);
+	void pav(char* Y_, double* Y, double* W, size_t N_);
+	void get_r_hat(double*, double*, double*, int*, int*);
+
 	~Ensemble();
 
 };

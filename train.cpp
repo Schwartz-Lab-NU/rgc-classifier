@@ -26,7 +26,7 @@ int main(int argc, char* argv[]) {
 	std::cout << "Using parameters from " << (std::string)argv[1] + "params.in" << std::endl;
 	std::fstream paramfile((std::string)argv[1] + "params.in", std::ios::in);
 	paramSet p(paramfile);
-	p.print();
+	// p.print();
 
 	//load the error correction matrix
 	int* ecoc = new int[p.nLabels*p.ensembleSize];
@@ -50,35 +50,10 @@ int main(int argc, char* argv[]) {
 		}
 		c = paramfile.peek();
 	}
-	std::string foldname = "fold" + std::to_string(f) + ".in";
-	// if (paramfile.eof()) {
-	// 	f = 1;
-	// 	foldname = "fold1.in";
-	// } else {
-	// 	while (ff<1e-10) {
-	// 		paramfile >> ff;
-	// 		std::cout << ff << std::endl;
-	// 		if (paramfile.eof()) {
-	// 			f = 2;
-	// 			foldname = "fold2.in";
-	// 		}
-	// 	} else {
-	// 		paramfile >> ff;
-	// 		std::cout << ff << std::endl;
-	// 		if (paramfile.eof()) {
-	// 			f = 3;
-	// 			foldname = "fold3.in";
-	// 		} else {
-	// 			std::cout << "All folds already trained. Exiting." << std::endl;
-	// 			delete[] ecoc;
-	// 			return 0;
-	// 		}
-	// 	}
-	// 	}
-	// }
-
 	paramfile.close();
 
+	std::string foldname = "fold" + std::to_string(f) + ".in";
+	
 
 	//load the PSTH data
 	std::ifstream infile(foldname,std::ios::binary);

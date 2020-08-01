@@ -596,7 +596,7 @@ int decisionNode::train(psthSet* data, double sumWeights_) {
 	for (int i=0;i<params->nRepeats;i++) {
 
 		if (cv) {
-			strideI = params->nRepeats * i;
+			strideI = params->nFeat * i;
 
 			//pull the data up into a local array
 			for (unsigned int j=0;j<N;j++) {
@@ -1939,6 +1939,13 @@ void paramSet::print() {
 	std::cout << "\t\tPercent of cell types in negative group: " << probPos*100 << std::endl;
 }
 
+void paramSet::print(std::ofstream& paramfile) {
+	paramfile << nFeat << std::endl << nFolds << std::endl << nLambda << std::endl << alpha; 
+	paramfile << std::endl << nRepeats << std::endl << maxDepth << std::endl << minSize;
+	paramfile << std::endl << maxTrees << std::endl << minTrees << std::endl << treeStopCount << std::endl << treeStopThresh;
+	paramfile << std::endl << ensembleSize << std::endl << probNeg << std::endl << probPos << std::endl << nLabels;
+}
+
 paramSet::paramSet(std::fstream& paramfile) {
 	paramfile >> nFeat >> nFolds >> nLambda >> alpha; 
 	paramfile >> nRepeats >> maxDepth >> minSize;
@@ -1948,7 +1955,8 @@ paramSet::paramSet(std::fstream& paramfile) {
 
 Ensemble::Ensemble(paramSet* params_, short unsigned int N_, int thread_, std::filesystem::path rootDir_, int* ecoc_):params(params_),N(N_),thread(thread_),rootDir(rootDir_),ecoc(ecoc_) {
 	// CreateDirectoryA(&rootDir); //create folder if it doesn't exist
-	
+	light = false;
+
 	forests = new Forest[params->ensembleSize];//(params, this);
 
 	inds = new int[N];
@@ -1956,22 +1964,16 @@ Ensemble::Ensemble(paramSet* params_, short unsigned int N_, int thread_, std::f
 	pred = new double[N];
 	bestPred = new double[N];
 	error = new bool[N];
-	score = new double[N];
-	// scoreP = new double[N];
-	// scoreN = new double[N];
-	allScores = new double[N];
-	// allPos = new double[N];
-	// allNeg = new double[N];
-
 	labels = new char[N];
+	
 	sampleWeights = new double[N];
 	featureWeights = new double[params->nFeat];
-
-	// treeWeights = new double[params->nTrees];
+	
 	accuracy = new double[params->maxTrees];
-
+	score = new double[N];
+	allScores = new double[N];
+	
 	rd = new randomDraws(thread);
-	// std::memset(rd, 0, sizeof(randomDraws));
 		
 	features = new featureList(params->nFeat*params->nRepeats); //randomly draws features from the dataset
 
@@ -2052,17 +2054,215 @@ int Ensemble::train(psthSet* data, int* sampleCounts, int i) {
 	// }
 }
 
-void Ensemble::test(psthSet* data, char* pred) {
+double Ensemble::test(psthSet* data, char* pred, int* sampleCounts, char transform) {
 	double* vals = new double[N]; //for intermediate calculation at node
 	double* results = new double[N]; // results from forest
-	int* inds = new int[N];
+	inds = new int[N];
+	int* allN;
+
+	double loss = 0.;
+
+	// std::cout << N << std::endl;
+	// for (int i=0;i<N;i++) {
+	// 	std::cout << (int) data->data[i]->label <<",";
+	// }
+	// std::cout << std::endl;
 
 	for (int i=0; i<N; i++) {
 		inds[i] = i;
 	}
 
 	//dev -> 0.;
-	double* dev = new double[N*params->nLabels]();
+	double* dev;
+	if (transform) {
+		dev = new double[N*params->ensembleSize];
+		allN = new int[params->ensembleSize];
+		rd = new randomDraws(0);
+		labels = new char[N];
+		for (size_t i=0; i<(size_t)N; i++) {
+			labels[i] = data->data[i]->label - 1;
+		}
+	} else {
+		dev = new double[N*params->nLabels]();
+	}
+
+	// std::ofstream savefile;
+
+	for (int i=0; i<params->ensembleSize; i++) {
+		//set results to 0 
+		std::memset(results, 0, N*sizeof(double));
+		
+		// create forest
+		forests = new Forest;
+		forests->params = params;
+		forests->ensemble = this;
+		forests->treeDir = rootDir / ("forest" + std::to_string(i+1));
+
+
+		forests->test(data, results, vals, inds);
+		
+		//if transforming, load the LUT and do nearest neighbors interpolation
+		if (transform) {
+			// forests->test(data, results, vals, inds, &(allN[i]));
+
+			//load this learner's transform
+			std::ifstream transformfile;
+			transformfile.open(forests->treeDir / ("fold" + std::to_string(transform) + ".LUT"), std::ios::binary);
+			
+			size_t N_;
+			transformfile.read(reinterpret_cast<char*>(&(N_)), sizeof(unsigned short int));
+
+			// allN[i] = N_;
+			double* LUTx = new double[N_];
+			double* LUTy = new double[N_];
+			
+			transformfile.read(reinterpret_cast<char*>(LUTx), N_*sizeof(double));
+			transformfile.read(reinterpret_cast<char*>(LUTy), N_*sizeof(double));
+			transformfile.close();
+
+			normalize(results, LUTx, LUTy, N_);
+
+			delete[] LUTx;
+			delete[] LUTy;
+
+			// savefile.open("tempResults.out", std::ios::binary | std::ios::app );
+			// savefile.write(reinterpret_cast<char*>(results), N*sizeof(double));
+			// savefile.write(reinterpret_cast<char*>(inds), N*sizeof(int));
+			// savefile.write(reinterpret_cast<char*>(&(allN[i])), sizeof(int));
+			
+			// savefile.close();
+
+			int stride = i*N;
+			for (int j=0; j<N; j++) {
+				dev[stride+inds[j]] = results[j];
+			}
+
+			allN[i] = 0;
+			for (size_t k=0; k<(size_t) params->nLabels; k++) {
+				allN[i]+= ecoc[k+params->nLabels*i]!=0;
+			}
+
+		} else {
+			// forests->test(data, results, vals, inds);
+
+			// savefile.open("tempResults.out", std::ios::binary | std::ios::app );
+			// savefile.write(reinterpret_cast<char*>(results), N*sizeof(double));
+			// savefile.write(reinterpret_cast<char*>(inds), N*sizeof(int));
+			
+			// savefile.close();
+
+			int stride = i*params->nLabels;
+			for (int j=0; j<params->nLabels; j++) {
+				if (ecoc[stride+j] != 0) { 
+					for (int k = 0; k< N; k++) {
+						dev[inds[k]*params->nLabels + j] += log1p(exp(-2 * ecoc[stride+j] * results[k]));
+					}
+				}
+			}
+		}
+
+		delete forests;
+	}
+	if (transform) {
+
+		loss = normalize(dev, ecoc, allN, sampleCounts, pred);
+		delete[] allN;
+		delete rd;
+		delete[] labels;
+	} else {
+		for (int k=0; k<N; k++) {
+			pred[k] = std::min_element(&(dev[inds[k]*params->nLabels]),&(dev[(inds[k]+1)*params->nLabels])) - &(dev[inds[k]*params->nLabels]);
+		}
+		return 0.; //we ought to calculate the weighted accuracy here... but we're frankensteining it
+	}
+
+	delete[] results;
+	delete[] dev;
+	delete[] vals;
+	delete[] inds;
+
+	return loss;
+}
+
+Ensemble::~Ensemble() {
+	if (!light) {
+		delete[] inds;
+		delete[] feat;
+		delete[] pred;
+		delete[] bestPred;
+		delete[] error;
+		delete[] labels;
+
+		delete[] sampleWeights;
+		delete[] featureWeights;
+
+		delete[] accuracy;
+		delete[] score;
+		delete[] allScores;
+
+		delete rd;
+		delete features;
+		delete reg;
+
+		delete[] forests;
+	}
+}
+
+void Ensemble::normalize(double* R, double* X, double* Y, size_t N_) {
+	//do nearest neighbors interpolation of the data in R using the mapping X->Y
+
+	for (size_t i=0; i<(size_t)N; i++) {//N-many elements in R
+		//execute a binary search tree
+		double r = R[i];
+		size_t min = 0;
+		size_t max = N_-1;
+
+		//make sure that data is in the range of (X[min] , X[max])
+		if (r>=X[max]) {
+			R[i] = Y[max];
+			continue;
+		} else if (r<=X[min]) {
+			R[i] = Y[min];
+			continue;
+		}
+		
+		while (max-min>1) {
+			size_t med = (max+min)/2; //look in the middle of the range
+			if (r>X[med]) { //discard the points to the left
+				min = med;
+			} else if (r<X[med]) { //discard the points to the right
+				max = med;
+			} else { //we will use this index
+				max = med;
+				min = med;
+			}
+		}
+
+		if (min==max) { //we have an exact correspondence
+			R[i] = Y[min];
+		} else if (r-X[min] > X[max]-r) { //we're closer to the upper bound
+			R[i] = Y[max];
+		} else if (r-X[min] < X[max]-r) { //we're closer to the lower bound
+			R[i] = Y[min];
+		} else { //we're between two values, so let's take the less extreme one
+			if (abs(Y[min]-0.5) < abs(Y[max]-0.5)) {
+				R[i] = Y[min];
+			} else {
+				R[i] = Y[max];
+			}
+		}
+	}
+};
+
+void Ensemble::normalize(psthSet* data, int* sampleCounts, int f) {
+	double* vals = new double[N]; //for intermediate calculation at node
+	double* results = new double[N]; // results from forest
+	labels = new char[N];
+	sampleWeights = new double[N];
+	
+	int* inds = new int[N];
+	double* Y = new double[N];
+		
 
 	for (int i=0; i<params->ensembleSize; i++) {
 		//set results to 0 
@@ -2074,85 +2274,283 @@ void Ensemble::test(psthSet* data, char* pred) {
 		forests->params = params;
 		forests->ensemble = this;
 		forests->treeDir = rootDir / ("forest" + std::to_string(i+1));
-		
+			
+		/////////////////////////////////////////
+		int badCount = 0;
+		int j=0;
+		while (j<N-badCount) {
+			while (ecoc[stride+data->data[j]->label - 1] == 0) { //we ignore these cells
+				//swap the datum at this index with another datum
+				badCount++;
+				if (j>=N-badCount) {
+					break;
+				}
+				std::swap(data->data[j], data->data[N-badCount]); //swap the pointers
+			} 
+			j++;
+		}
+
+		data->N = N-badCount; // we will ignore the cells at the tail end 
 
 		forests->test(data, results, vals, inds);
 
-		//check that the forest classification is working properly
-		double acc = 0.;
-		double nn = 0;
-		double npr = 0;
-		for (int j=0;j<N;j++) {
-			if (ecoc[stride+data->data[j]->label-1] >0) {
-				nn+=1;
-				if (results[j]>=0) {
-					acc+=1.;	
-				}
-			} else if (ecoc[stride+data->data[j]->label-1]<0) {
-				nn+=1;
-				if (results[j]<0) {
-					acc+=1.;
-				}
+		// double a = 0.;
+		for (j=0;j<N-badCount;j++) {
+			int thisLabel = data->data[j]->label-1;
+			if (ecoc[stride+thisLabel] == 1) {
+				// data->npos++;
+				labels[j] = 1;
+			} else {
+				labels[j] = 0;
 			}
-			if (results[j]>0) {
-				npr+=1;
-			}
-			// std::cout << inds[j] << ",";
+			
+			// a+= 1./sampleCounts[thisLabel];
 		}
-		std::cout << acc/nn << "(" << nn <<" [" << npr <<"])"<< std::endl;
+		// a = 1./a;
 
-		for (int j=0; j<params->nLabels; j++) {
-			if (ecoc[stride+j] != 0) { 
-				for (int k = 0; k< N; k++) {
-					// std::cout << "("<<ecoc[stride+j]<<","<<results[k]<<","<<log(1 + exp(-2 * ecoc[stride+j] * results[k])) << "),";
+		// double testing = 0.;
+		for (j=0;j<N-badCount;j++) {
+			int thisLabel = data->data[j]->label-1;
+			sampleWeights[j] = 1./sampleCounts[thisLabel];// * a; //initialize the weights
+		}
+		/////////////////
 
-					dev[k*params->nLabels + j] += log(1 + exp(-2 * ecoc[stride+j] * results[inds[k]]));
 
-					// dev[k*params->nLabels + j] -= ecoc[stride+j] * results[k];
-					
-					// dev(L,N) += log(1 + exp(-2*ecoc(forest,L)*results(N))) / (2*log(2))
-				}
+		for (j=0; j<data->N; j++) {
+			inds[j] = j;
+		}
+		std::stable_sort(inds, &(inds[data->N]), [&results](size_t a, size_t b) {return results[a] < results[b];});
+		
+		for (j=0; j<data->N; j++) {
+			while (inds[j] != j) {
+				std::swap(results[inds[j]], results[inds[inds[j]]]); //just swaps the pointers to each cell
+				std::swap(labels[inds[j]],labels[inds[inds[j]]]);
+				std::swap(sampleWeights[inds[j]],sampleWeights[inds[inds[j]]]);
+
+				std::swap(inds[j], inds[inds[j]]);
 			}
 		}
-		// std::cout << std::endl;
-		delete forests;
+		pav(labels, Y, sampleWeights, (size_t) N-badCount);
+		//now (results, labels) defines the LUT of the scores-to-probabilities transform
+
+		//save
+		std::ofstream transformfile;
+		transformfile.open(forests->treeDir / ("fold" + std::to_string(f) + ".LUT"), std::ios::binary);
+		
+		transformfile.write(reinterpret_cast<char*>(&(data->N)), sizeof(unsigned short int));
+		transformfile.write(reinterpret_cast<char*>(results), data->N*sizeof(double));
+		transformfile.write(reinterpret_cast<char*>(Y), data->N*sizeof(double));
+		
+		transformfile.close();
+
 	}
-
-	for (int k=0; k<N; k++) {
-		for (int j=0; j<params->nLabels; j++) {
-			std::cout << dev[k*params->nLabels+j] << ",";
-		}
-		std::cout << std::endl;
-		pred[k] = std::min_element(&(dev[k*params->nLabels]),&(dev[(k+1)*params->nLabels])) - &(dev[k*params->nLabels]);
-	}
-
+	delete[] Y;
 	delete[] results;
-	delete[] dev;
 	delete[] vals;
 	delete[] inds;
-}
-
-Ensemble::~Ensemble() {
-	delete[] inds;
-	delete[] feat;
-	delete[] pred;
-	delete[] bestPred;
-	delete[] error;
 	delete[] labels;
 	delete[] sampleWeights;
-	delete[] featureWeights;
-	// delete[] treeWeights;
-	delete[] accuracy;
-	delete[] score;
-	// delete[] scoreP;
-	// delete[] scoreN;
-	// delete[] allPos;
-	// delete[] allNeg;
-	delete rd;
-	delete features;
-	delete reg;
+}
 
-	delete[] forests;
+double Ensemble::normalize(double* R, int* M, int* N_, int* W, char* pred) {
+	//R ~ N-by-L <innermost -> outermost >
+	//M ~ K-by-L
+	//N_ ~ L-by-1
+	size_t numBytes = N*params->nLabels*sizeof(double);
+	
+	double* P = new double[N*params->nLabels];
+	double* oldP = new double[N*params->nLabels];
+	double* r_hat = new double[N*params->ensembleSize];
+	double* n_r_hat = new double[N*params->nLabels];
+	double* nr = new double[N*params->nLabels]();
+
+	double bestKL = INFINITY;
+	double loss = 0.;
+	double wloss = 0.;
+
+	//calculate nR
+	for (size_t i=0; i<(size_t) N; i++) {
+		size_t strideI = i*params->nLabels;
+		for (size_t k=0; k<(size_t) params->ensembleSize; k++) {
+			size_t strideJ = k*params->nLabels;
+			size_t strideK = k*N;
+			for (size_t j=0; j<(size_t) params->nLabels; j++) {
+				nr[strideI+j]+= ((M[j+strideJ]>0) * N_[k] * R[i+strideK]) + ((M[j+strideJ]<0) * N_[k] * (1.-R[i+strideK])); 
+			}
+		}
+	}
+
+	for (int iter=0; iter<1e1; iter++) {
+
+		//init p to random values with sum 1 across labels
+		for (size_t i=0; i<(size_t) N; i++) {
+			size_t stride = i*params->nLabels;
+			double a = 0.;
+			for (size_t j=0; j<(size_t) params->nLabels; j++) {
+				P[stride+j] = rd->getR();
+				a+=P[stride+j];
+			}
+			a = 1./a;
+			for (size_t j=0; j<(size_t) params->nLabels; j++) {
+				P[stride+j] *= a;
+			}
+		}
+		//loop until convergence
+		double delta = INFINITY;
+		while (delta>1e-5) {
+			delta = 0.;
+			std::memcpy(oldP, P, numBytes);
+
+			//compute r_hat
+			get_r_hat(P,r_hat,n_r_hat,M,N_);
+
+			//update P
+			for (size_t i=0; i<(size_t) N; i++) {
+				size_t stride = i*params->nLabels;
+				double a = 0.;
+				for (size_t j=0; j<(size_t) params->nLabels; j++) {
+					// P[stride+j] = rd->getR();
+					P[stride+j] *= (nr[stride+j] / n_r_hat[stride+j]);
+					a+=P[stride+j];
+				}
+				a = 1./a;
+				for (size_t j=0; j<(size_t) params->nLabels; j++) {
+					P[stride+j] *= a; //renormalize
+					delta = std::max(delta, abs(P[stride+j] - oldP[stride+j]));
+				}
+			}
+		}
+
+		double KL = 0.;
+
+		for (size_t l=0; l<(size_t) params->ensembleSize; l++) {
+			size_t stride = N*l;
+			int thisN = N_[l];
+			for (size_t n=0; n<(size_t) N; n++) {
+				double tR = R[n+stride];
+				double tRh = r_hat[n+stride];
+
+				if (tR>1e-7 && tRh>1e-7 && (1-tR)>1e-7 && (1-tRh)>1e-7) {
+					//note we assume that if either value is close to 0/1 then the other is too so that the KL distance approaches 0
+					KL+= thisN * ((tR*log(tR/tRh)) + ((1-tR)*log((1-tR)/(1-tRh))));
+				}				
+				// double l1 = (tR==0 < 1e-7 ? 0 : )
+				// KL+= N_[l] * ((R[n + N*l] * log( R[n + N*l] / r_hat[n + N*l])) + ((1-R[n + N*l]) * log( (1-R[n + N*l]) / (1-r_hat[n + N*l]))));
+			}
+		}
+
+		// for (size_t i=0; i<(size_t) N*params->ensembleSize; i++) {
+			// frobenius += abs(r_hat[i]-R[i]);
+			//use the KL distancei instead:
+			// l += N_ * (r * ln(r/r_hat) + (1-r)*ln((1-r)/(1-r_hat)) )
+			// KL += N_[i]
+		// }
+
+		if (KL < bestKL) { //we have a relatively good approximation of R from the starting values
+			//let's just save the result as the prediction
+			bestKL = KL;
+			loss = 0.;
+			wloss = 0.;
+
+			for (size_t i=0; i<(size_t) N; i++) {
+				pred[i] = std::max_element(&(P[inds[i]*params->nLabels]),&(P[(inds[i]+1)*params->nLabels])) - &(P[inds[i]*params->nLabels]);		
+				
+				double tweight = 1./W[labels[i]];
+
+				size_t stride = params->nLabels*i;
+				for (char j=0; j<(char) params->nLabels; j++) {
+					double temp = (labels[i]==j) ? (1-P[stride+j])*(1-P[stride+j]) : P[stride+j]*P[stride+j];
+					loss += temp;
+					wloss += temp*tweight;
+				}
+			}
+		}
+	}
+	std::cout << "Finished result normalization." <<std::endl;
+	std::cout << "KL distance of best approximation (lower is better): " << bestKL << std::endl;
+	std::cout << "Total loss (MSE): " << loss /N << std::endl;
+	std::cout << "Class-weighted loss: " <<wloss /params->nLabels << std::endl;
+
+	delete[] P;
+	delete[] oldP;
+	delete[] r_hat;
+	delete[] n_r_hat;
+	delete[] nr;
+
+	return wloss / params->nLabels;
+}
+
+void Ensemble::get_r_hat(double* P, double* r_hat, double* n_r_hat, int* M, int* N_) {
+	
+	size_t K = params->nLabels;
+	size_t L = params->ensembleSize;
+
+	//lots of room for optimization here?
+
+	// std::memset(n_r_hat, 0, N*K*sizeof(double));
+	for (size_t n=0; n<(size_t) N; n++) {
+		size_t strideN = n*K;
+		for (size_t l=0; l<L; l++) {
+			double rp = 0.;
+			double rn = 0.;
+			size_t strideL = l*K;
+			for (size_t k=0; k<K; k++) {
+				rp += (M[k+strideL]>0) * P[k+strideN];
+				rn += (M[k+strideL]<0) * P[k+strideN];
+			}
+
+			 double r = rp / (rp + rn);
+			 r_hat[n+N*l] = r; // the coupled approximation
+		}
+	}
+
+	for (size_t n=0; n<(size_t) N; n++) {
+		size_t strideN = n*K;
+
+		for (size_t k=0; k<K; k++) {
+			n_r_hat[k + strideN] = 0.;
+
+			for (size_t l=0; l<L; l++) {
+				n_r_hat[k + strideN] += ((M[k+K*l]>0) * r_hat[n+N*l] * N_[l]) + ((M[k+K*l]<0) * (1.-r_hat[n+N*l]) * N_[l]);  
+			}
+		}
+	}
+}
+
+void Ensemble::pav(char* Y_, double* Y, double* W, size_t N_) {
+	size_t j=0;
+	double* a = new double[N_];
+	// double* v = new double[N];
+	size_t* S = new size_t[N_];
+
+	a[0] = Y_[0];
+	// v[0] = W[0];
+	S[0] = 0;
+
+	//note that j <= i
+	for (size_t i=1; i<N_; i++) {
+		j++;
+		a[j] = Y_[i];
+		W[j] = W[i];
+		while (j>0 && a[j] < a[j-1]) {
+			double tw = W[j] + W[j-1];
+			a[j-1] = (W[j]*a[j] + W[j-1]*a[j-1]) / tw;
+			W[j-1] = tw;
+			j--;
+		}
+		S[j] = i;
+	}
+
+	Y[0] = a[0];
+	for (size_t i=1; i<=j; i++) {
+		for (size_t k=S[i-1]; k<=S[i]; k++) {
+			Y[k] = a[i];
+		}
+	}
+
+	delete[] a;
+	// delete[] v;
+	delete[] S;
 }
 
 Forest::Forest() {
@@ -2291,6 +2689,34 @@ void Forest::test(psthSet* data, double* results, double* vals, int* inds) {
 		i++;
 	}
 }
+
+// void Forest::test(psthSet* data, double* results, double* vals, int* inds, int* saveN) {
+	
+// 	std::ifstream treefile;
+// 	int i=1;
+// 	while (true) {
+// 		//load the tree
+// 		// std::cout << "loading tree... " << std::endl;
+// 		treefile.open(treeDir / ("tree" + std::to_string(i) + ".out"), std::ios::binary);
+// 		if (!treefile.good()) {
+// 			break; //we've read all the trees
+// 		}
+// 		trees = new Tree(treefile);
+// 		treefile.close();
+// 		// std::cout << treeDir / ("tree" + std::to_string(i) + ".out")<< std::endl;
+// 		// std::cout << trees->treeWeight << std::endl;
+
+// 		// trees->print(false, false);
+// 		//add the score to the results		
+// 		trees->test(data, results, vals, inds);
+// 		saveN[0] = trees->N;
+
+// 		//clean up
+// 		delete trees;
+// 		i++;
+// 	}
+// }
+
 
 Forest::~Forest() {
 	// delete[] trees;
