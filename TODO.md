@@ -7,6 +7,20 @@
     - [ ] Function to resample raw data onto normalized frame
     - [ ] Function to classify using interpolation
       - [ ] Append datafile properties to tree
+- [ ] Improve commandline options
+  - [ ] Allow to identify desired folds for transform
+  - [ ] Ask user to confirm overwrites of files and allow -force option
+  - [ ] Allow for unordered input
+- [ ] Add support for continuation of interrupted training
+  - [X] Save RNG state
+  - [ ] Parse trees for completeness
+  - [ ] Add commandline options
+- [ ] Reorganize outputs
+  - [ ] Save ECOC matrix to separate file and allow matrix ID as optional input
+  - [ ] Save training times in params directory with reference to ecoc matrix
+  - [ ] Include comments in params file to clarify values?
+  - [ ] Remove transform status
+  - [ ] Save test results in more verbose files
 - [ ] Generation of parameter files using Bayesian optimization
   - [x] in Matlab
   - [ ] in C++
