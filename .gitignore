@@ -1,4 +1,6 @@
 0514/
+2206/
+3069/
 .vscode/
 *.in
 ecoc
@@ -7,3 +9,4 @@ test
 train
 transform
 treeObjects.o
+temp*

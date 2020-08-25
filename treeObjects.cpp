@@ -13,7 +13,7 @@
 #include <cstring> //memset
 
 //loading psth files
-psthSet::psthSet(int N):N(N) {
+psthSet::psthSet(int N_):N(N_) {
 	data = new psth*[N]; //need to alloc the individual psth's...
 	light = true;//the child data are just pointers, we malloced on load
 }

@@ -69,7 +69,7 @@ int do_ecoc(int* ecocOut, int K, int L, double neg, double pos) {
 	bool* negDiff = new bool[L];
 	int* ecoc = new int[K*L];
 
-	int bestHamming = 0;
+	int bestHamming = -1;
 	bool updated = false;
 
 	int i=0;
