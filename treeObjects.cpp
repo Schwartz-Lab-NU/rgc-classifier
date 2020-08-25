@@ -189,6 +189,38 @@ void psthSet::copy(psthSet* data) {
 	cdfS = new double[ns];
 }
 
+void psthSet::append(psthSet* indata) {
+	//
+	unsigned short int oldN = N;
+	N += indata->N;
+	npos += indata->npos;
+	//should really check the below elements to guarantee same size...
+	// dt = indata->dt;
+	// t0 = indata->t0;
+	// tf = indata->tf;
+	// nt = indata->nt;
+	// ns = indata->ns;
+	// s0 = indata->s0;
+	// sf = indata->sf;
+	// ne = indata->ne;
+
+	psth** newData = new psth*[N]; 
+	for (size_t i=0; i<(size_t)N; i++) {
+		if (i<oldN) {
+			newData[i] = data[i];
+		} else {
+			newData[i] = indata->data[i-oldN];
+		}
+	}
+
+	delete[] data;
+	data = newData;
+
+	stats();
+	indata->light = true; //we don't want to delete the child data when deleting the appended copy
+	// delete indata;
+}
+
 psthSet::~psthSet() {
 	if (!light) {
 		// delete[] weights;

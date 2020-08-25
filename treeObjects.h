@@ -70,6 +70,7 @@ public:
 	bool light; // true if we don't need to alloc/delete internally
 
 	void stats();
+	void append(psthSet* indata);
 	void copy(psthSet* data);
 	psthSet(int N);
 	psthSet(const psthSet* indata);

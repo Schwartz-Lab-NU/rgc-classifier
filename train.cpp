@@ -12,6 +12,7 @@
 #include <sys/time.h>
 #include <sstream>
 
+//usage: ./train PARAMS_ID num_threads
 int main(int argc, char* argv[]) {
 	// test compiler version
 	// #if UINTPTR_MAX == 0xffffffff
@@ -34,7 +35,6 @@ int main(int argc, char* argv[]) {
 		paramfile >> ecoc[i];
 	}
 
-
 	int f = 1;
 	// double ff;
 
@@ -53,14 +53,23 @@ int main(int argc, char* argv[]) {
 	paramfile.close();
 
 	std::string foldname = "fold" + std::to_string(f) + ".in";
-	
-
+	// std::string foldname = "fold" + std::to_string(f==1?2:1) + ".in";
 	//load the PSTH data
 	std::ifstream infile(foldname,std::ios::binary);
 
 	psthSet* data;
 	data = new psthSet(infile);
 	infile.close();
+
+	//load the second dataset
+
+	// foldname = "fold" + std::to_string(f==3?2:3) + ".in";
+	// infile.open(foldname, std::ios::binary);
+	// psthSet* data2;
+	// data2 = new psthSet(infile);
+	// infile.close();
+
+	// data->append(data2);
 
 	int* sampleCounts = new int[p.nLabels]();
 	for (int i=0; i<data->N; i++) {
@@ -80,7 +89,7 @@ int main(int argc, char* argv[]) {
 	struct timeval start, end;
 	gettimeofday(&start, NULL);
 
-	std::cout << "Training on fold " << f << std::endl;
+	std::cout << "Training against fold " << f << std::endl;
 
 
 	#pragma omp parallel num_threads(NT) //private(sampleCounts)//private(ensl, datal)
@@ -102,7 +111,7 @@ int main(int argc, char* argv[]) {
 	}
 	gettimeofday(&end, NULL);
 
-	std::cout << "Done training on fold " << f << "!" << std::endl;
+	std::cout << "Done training against fold " << f << "!" << std::endl;
 
 	paramfile.open((std::string)argv[1] + "params.in", std::ios::app);
 	paramfile << std::endl << (int) (end.tv_sec - start.tv_sec)*NT; //time * thread
@@ -111,6 +120,7 @@ int main(int argc, char* argv[]) {
 	delete[] ecoc;
 	delete[] sampleCounts;
 	delete data;
+	// delete data2;
 
 
 	// std::cout << "Line " << __LINE__  << ", File " << __FILE__ <<std::endl; //kept here for reuse
