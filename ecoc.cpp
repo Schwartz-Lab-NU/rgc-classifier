@@ -9,9 +9,10 @@
 int do_ecoc(int*, int, int, double, double);
 bool unique_rows(int*, int, int);
 bool traversible(int*, int, int);
-bool visit(int, int, int, int*, bool*, bool*, int, int, int);
+bool visit(int, int, int, int*, bool*, bool*, int, int, int, int*);
 
 #define MAX_ITER 10000
+#define MAX_VISITS 1000
 
 //usage: ./ecoc PARAMS_ID 
 int main(int argc, char* argv[]) {
@@ -232,11 +233,11 @@ bool traversible(int* ecoc, int K, int L) {
 			traversed[k]=true;
 			traversed[kk]=true;
 			while (!sep && l<L) {
-				sep = visit(l, k, kk, ecoc, visited, traversed, K, L, unvisited);
+				int total = 0;
+				sep = visit(l, k, kk, ecoc, visited, traversed, K, L, unvisited, &total);
 				if (sep) {
 					break;
 				}
-
 				l++;
 			}
 
@@ -252,7 +253,7 @@ bool traversible(int* ecoc, int K, int L) {
 	return false;
 }
 
-bool visit(int l, int k1, int k2, int* ecoc, bool* visited, bool* traversed, int K, int L, int unvisited) {
+bool visit(int l, int k1, int k2, int* ecoc, bool* visited, bool* traversed, int K, int L, int unvisited, int* total) {
 	//k1 and k2 are the target rows
 	//l is the current column
 	//visited indicates the legal columns
@@ -276,9 +277,12 @@ bool visit(int l, int k1, int k2, int* ecoc, bool* visited, bool* traversed, int
 					traversed[k] = true; //we don't need to revisit this row on this route... otherwise would end up in inifinite loop
 					for (int ll=0;ll<L;ll++) {
 						if (!visited[ll] && ecoc[ll*K+k]) {
-							bool success = visit(ll, k, k2, ecoc, visited, traversed, K, L, unvisited);
+							(*total)++;
+							bool success = visit(ll, k, k2, ecoc, visited, traversed, K, L, unvisited, total);
 							if (success) { //we managed to link these rows
 								return true;
+							} else if ((*total) >= MAX_VISITS) {
+								return false;
 							}
 						} 
 					}
@@ -291,7 +295,7 @@ bool visit(int l, int k1, int k2, int* ecoc, bool* visited, bool* traversed, int
 		}
 	} else if (ecoc[l*K+k2]) {
 		//we can just swap k1 and k2 and try again
-		return visit(l, k2, k1, ecoc, visited, traversed, K, L, unvisited);
+		return visit(l, k2, k1, ecoc, visited, traversed, K, L, unvisited, total);
 	} else {
 		return false; //we can't move vertically in this column 
 	}
