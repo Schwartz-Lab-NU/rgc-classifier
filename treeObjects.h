@@ -67,7 +67,8 @@ public:
 
 	// double* weights;
 
-	bool light; // true if we don't need to alloc/delete internally
+	bool light; // true if we don't need to alloc/delete the individual psth's
+	bool empty; //if true then data is a shallow copy of another psthset's data
 
 	void stats();
 	void append(psthSet* indata);
@@ -306,8 +307,8 @@ public:
 	// virtual void train(psthSet* data, paramSet* params, randomDraws* rd, regression* reg);
 	virtual int train(psthSet* data, double sumWeights_);
 	virtual void test(psth** data, double* results, double* vals, int* inds, int end, int nt){};
-	virtual void save(std::ofstream& datafile);
-	virtual void load(std::ifstream& datafile);
+	virtual void save(std::fstream& datafile);
+	virtual void load(std::fstream& datafile);
 	virtual void print(int d, int o, bool v);
 
 	virtual ~Node(){};
@@ -327,8 +328,8 @@ public:
 	Leaf(int start_);
 	int train(psthSet* data, double sumWeights_);
 	void test(psth** data, double* results, double* vals, int* inds, int end, int nt);
-	void save(std::ofstream& datafile);
-	void load(std::ifstream& datafile);
+	void save(std::fstream& datafile);
+	void load(std::fstream& datafile);
 	void print(int d, int o, bool v);
 	~Leaf(){};
 };
@@ -368,8 +369,8 @@ public:
 	decisionNode(){};
 	int train(psthSet* data, double sumWeights_);
 	void test(psth** data, double* results, double* vals, int* inds, int end, int nt);
-	void save(std::ofstream& datafile);
-	void load(std::ifstream& datafile);
+	void save(std::fstream& datafile);
+	void load(std::fstream& datafile);
 	void print(int d, int o, bool v);
 	~decisionNode();
 };
@@ -411,14 +412,14 @@ public:
 	int minSize;
 
 	Tree(paramSet* params_);
-	Tree(std::ifstream& datafile);
+	Tree(std::fstream& datafile);
 	Tree();
 	~Tree();
 
 	void init();
 	int train(psthSet* data);
 	void test(psthSet* data, double* results, double* vals, int* inds);
-	void save(std::ofstream& datafile);
+	void save(std::fstream& datafile);
 	void print(bool o, bool v);
 };
 
@@ -446,7 +447,7 @@ public:
 
 	Forest();
 	Forest(paramSet* params_, Ensemble* ens_);
-	int train(psthSet* data, int f); //and some more stuff...
+	int train(psthSet* data, int f, double* vals); //and some more stuff...
 	void test(psthSet* data, double* results, double* vals, int* inds);
 	void test(psthSet* data, double* results, double* vals, int* inds, int* saveN);
 	~Forest();

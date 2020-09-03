@@ -14,7 +14,7 @@ int main(int argc, char* argv[]) {
 
 	std::cout << "Printing tree from ./" << treefile << std::endl;
 
-	std::ifstream treestream(treefile, std::ios::binary);
+	std::fstream treestream(treefile, std::fstream::in | std::ios::binary);
 	Tree tree(treestream);
 	treestream.close();
 	tree.print(false, false);

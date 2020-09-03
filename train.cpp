@@ -81,7 +81,7 @@ int main(int argc, char* argv[]) {
 
 	int NT = atoi(argv[2]); //number of threads
 	
-	std::filesystem::remove_all(rootDir); //we want to clear the prior contents of this directory if any
+	// std::filesystem::remove_all(rootDir); //we want to clear the prior contents of this directory if any
 	std::filesystem::create_directories(rootDir); //re-create the root dir
 
 	//begin timer
