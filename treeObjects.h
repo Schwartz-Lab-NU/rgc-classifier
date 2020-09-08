@@ -138,7 +138,7 @@ public:
 	paramSet() {};
 	paramSet(std::fstream& paramfile);
 	void print();
-	void print(std::ofstream&);
+	void print(std::fstream&);
 };
 
 class regression {

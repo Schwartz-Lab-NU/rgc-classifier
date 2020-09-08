@@ -11,6 +11,7 @@
 #include <ctime>
 #include <sys/time.h>
 #include <sstream>
+#include <iomanip>
 
 //usage: ./train PARAMS_ID num_threads
 int main(int argc, char* argv[]) {
@@ -34,87 +35,82 @@ int main(int argc, char* argv[]) {
 	for (int i=0;i<p.nLabels*p.ensembleSize;i++) {
 		paramfile >> ecoc[i];
 	}
-
-	int f = 1;
-	// double ff;
-
-	int c = 0;
-	c = paramfile.peek();
-	while (c!=EOF) {
-		paramfile >> c;
-		f++;
-		if (f>3) {
-			std::cout << "All folds already trained. Exiting." << std::endl;
-			delete[] ecoc;
-			return 0;
-		}
-		c = paramfile.peek();
-	}
 	paramfile.close();
 
-	std::string foldname = "fold" + std::to_string(f) + ".in";
-	// std::string foldname = "fold" + std::to_string(f==1?2:1) + ".in";
-	//load the PSTH data
-	std::ifstream infile(foldname,std::ios::binary);
+	psthSet** data = new psthSet*[3];
+	int** sampleCounts = new int*[3];
+	std::filesystem::path* rootDir = new std::filesystem::path[3];
+	// int N;
 
-	psthSet* data;
-	data = new psthSet(infile);
-	infile.close();
+	for (int f=0;f<=2;f++) {
+		std::string foldname = "fold" + std::to_string(f+1) + ".in";
+		std::ifstream infile(foldname,std::ios::binary);
 
-	//load the second dataset
+		//load the PSTH data
+		data[f] = new psthSet(infile);
+		infile.close();
 
-	// foldname = "fold" + std::to_string(f==3?2:3) + ".in";
-	// infile.open(foldname, std::ios::binary);
-	// psthSet* data2;
-	// data2 = new psthSet(infile);
-	// infile.close();
+		// N = std::max(N, data[f]->N);
 
-	// data->append(data2);
+		sampleCounts[f] = new int[p.nLabels]();
+		for (int i=0; i<data[f]->N; i++) {
+			sampleCounts[f][data[f]->data[i]->label -1] +=1;
+		}
 
-	int* sampleCounts = new int[p.nLabels]();
-	for (int i=0; i<data->N; i++) {
-		sampleCounts[data->data[i]->label -1] +=1;
+		rootDir[f] = argv[1];
+		rootDir[f] /= ("fold" + std::to_string(f+1));
+		
+		std::filesystem::create_directories(rootDir[f]); //create the root dir if necessary
 	}
-
-	std::filesystem::path rootDir = argv[1];
-	rootDir /= ("fold" + std::to_string(f));
 
 	int NT = atoi(argv[2]); //number of threads
 	
-	// std::filesystem::remove_all(rootDir); //we want to clear the prior contents of this directory if any
-	std::filesystem::create_directories(rootDir); //re-create the root dir
 
 	//begin timer
 	// std::clock_t start = std::clock();
 	struct timeval start, end;
 	gettimeofday(&start, NULL);
 
-	std::cout << "Training against fold " << f << std::endl;
-
+	std::cout << "Beginning training... " << std::endl;
 
 	#pragma omp parallel num_threads(NT) //private(sampleCounts)//private(ensl, datal)
 	{
 		int t = omp_get_thread_num();
 		// int err = 0;
 
-		Ensemble ensl(&p, data->N, t, rootDir, ecoc);
-		psthSet datal(data);
+		for (size_t f=0; f<=2; f++) {
+			Ensemble ensl(&p, data[f]->N, t, rootDir[f], ecoc);
+			psthSet datal(data[f]);
 
-		#pragma omp for schedule(dynamic, 1)
-			for (int i=0; i<p.ensembleSize; i++) {
-				ensl.train(&datal, sampleCounts, i);
+			#pragma omp for schedule(dynamic, 1) nowait
+				for (int i=0; i<p.ensembleSize; i++) {
+					ensl.train(&datal, sampleCounts[f], i);
 
-				#pragma omp critical
-				std::cout << ensl.buffer.rdbuf();
-			}
+					#pragma omp critical
+					std::cout << "Fold[" << f+1 << "]:" << std::endl << ensl.buffer.rdbuf();
+					//only print from 1 thread at a time, to avoid illegible results
+				}
+		}
 		// std::cout << "exiting on thread " << t << std::endl;
 	}
 	gettimeofday(&end, NULL);
 
-	std::cout << "Done training against fold " << f << "!" << std::endl;
+	std::cout << "Done training!" << std::endl;
 
-	paramfile.open((std::string)argv[1] + "params.in", std::ios::app);
-	paramfile << std::endl << (int) (end.tv_sec - start.tv_sec)*NT; //time * thread
+	paramfile.open((std::string)argv[1] + "params.in", std::ios::out);
+
+	p.print(paramfile); //re-write the params...
+
+	paramfile << std::endl;
+	for (int i=0;i<p.ensembleSize;i++) {
+		int stride = i*p.nLabels;
+		for (int j=0;j<p.nLabels;j++) {
+			paramfile << std::setw(3)<< ecoc[stride+j];
+		}
+		paramfile << std::endl;
+	} //re-write the ecoc matrix...
+
+	paramfile << (int) (end.tv_sec - start.tv_sec)*NT; //time * thread
 	paramfile.close();
 
 	delete[] ecoc;

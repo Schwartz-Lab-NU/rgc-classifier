@@ -411,6 +411,16 @@ void Tree::init() {
 	
 int Tree::train(psthSet* data) {
 	N = data->N;
+
+	minSize = std::min(minSize, N/2);
+	if (minSize<1) {
+		root = new Leaf(0);
+		root->tree = this;
+		root->train(data, 1);
+		
+		accuracy = root->accuracy;
+		return 0;
+	}
 	
 	// std::cout << rd->getR() << std::endl; 
 	//make a copy of the current RNG state
@@ -444,7 +454,7 @@ int Tree::train(psthSet* data) {
 				delete root;
 				root = new Leaf(0);
 				root->tree = this;
-				root->train(data, 1);
+				err = root->train(data, 1);
 				// print(false,true);
 				// return 1;
 			}
@@ -1832,7 +1842,7 @@ void uncertainty::get_uncertainty(double* X, char* Y, double* W, int* inds) { //
 		}
 	}
 
-	for (unsigned int i=m; i<(N-m); i++) {
+	for (int i=m; i<(int) (N-m); i++) {
 		ii = inds[i];
 		wi = W[ii];
 		tw+=wi;
@@ -1911,7 +1921,7 @@ void paramSet::print() {
 	std::cout << "\t\tPercent of cell types in negative group: " << probPos*100 << std::endl;
 }
 
-void paramSet::print(std::ofstream& paramfile) {
+void paramSet::print(std::fstream& paramfile) {
 	paramfile << nFeat << std::endl << nFolds << std::endl << nLambda << std::endl << alpha; 
 	paramfile << std::endl << nRepeats << std::endl << maxDepth << std::endl << minSize;
 	paramfile << std::endl << maxTrees << std::endl << minTrees << std::endl << treeStopCount << std::endl << treeStopThresh;

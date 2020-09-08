@@ -42,22 +42,23 @@ int main(int argc, char* argv[]) {
 	}
 
 
-	std::ofstream paramsout;
-	paramsout.open((std::string)argv[1] + "params.in");
-	p.print(paramsout); //re-write the params...
+	// std::ofstream paramfile;
+	// paramfile.open((std::string)argv[1] + "params.in");
+	paramfile.open((std::string)argv[1] + "params.in", std::ios::out);
+	p.print(paramfile); //re-write the params...
 
-	paramsout << std::endl;
+	paramfile << std::endl;
 	for (int i=0;i<p.ensembleSize;i++) {
 		int stride = i*p.nLabels;
 		for (int j=0;j<p.nLabels;j++) {
-			paramsout << std::setw(3)<< ecoc[stride+j];
+			paramfile << std::setw(3)<< ecoc[stride+j];
 		}
 		if (i<p.ensembleSize-1) {
-			paramsout << std::endl;
+			paramfile << std::endl;
 		}	
 	}
 
-	paramsout.close();
+	paramfile.close();
 	delete[] ecoc;
 	std::cout << "Successfully wrote ECOC matrix for " << (std::string) argv[1] << std::endl;
 	return 0;

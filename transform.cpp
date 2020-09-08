@@ -26,7 +26,7 @@ int main(int argc, char* argv[]) {
 	while (c!=EOF) {
 		paramfile >> c;
 		f++;
-		if (f>12) {
+		if (f>10) {
 			std::cout << "All folds already transformed. Exiting." << std::endl;
 			delete[] ecoc;
 			return 0;
@@ -35,7 +35,7 @@ int main(int argc, char* argv[]) {
 	}
 	paramfile.close();
 
-	if (f<4) {
+	if (f<2) {
 		std::cout << "Folds are not done training! Exiting." << std::endl;
 		delete[] ecoc;
 		return 0;
@@ -46,8 +46,8 @@ int main(int argc, char* argv[]) {
 	// if (transformFold==0) {
 	// 	transformFold = 3;
 	// }
-	int trainFold = ((f-4)/3) + 1;
-	int transformFold = (f-4)%3 + 1;
+	int trainFold = ((f-2)/3) + 1;
+	int transformFold = (f-2)%3 + 1;
 
 	// std::string foldname = "fold" + std::to_string(f) + ".in";
 	//load test fold data.in
