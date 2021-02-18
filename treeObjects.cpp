@@ -2437,9 +2437,13 @@ double Ensemble::normalize(double* R, int* M, int* N_, int* W, char* pred) {
 			loss = 0.;
 			wloss = 0.;
 
+			std::fstream probFile(rootDir /= "lastP.out", std::ios::out | std::ios::binary);
+
 			for (size_t i=0; i<(size_t) N; i++) {
 				pred[i] = std::max_element(&(P[inds[i]*params->nLabels]),&(P[(inds[i]+1)*params->nLabels])) - &(P[inds[i]*params->nLabels]);		
 				
+				probFile.write(reinterpret_cast<char*>(&(P[i*params->nLabels])), params->nLabels*sizeof(double));
+
 				double tweight = 1./W[labels[i]];
 
 				size_t stride = params->nLabels*i;
@@ -2449,6 +2453,7 @@ double Ensemble::normalize(double* R, int* M, int* N_, int* W, char* pred) {
 					wloss += temp*tweight;
 				}
 			}
+			probFile.close();
 		}
 	}
 	std::cout << "Finished result normalization." <<std::endl;
@@ -2696,6 +2701,14 @@ int Forest::train(psthSet* data, int f, double* vals) {
 		delete trees;
 		nTrees++;
 	}
+
+	//we've finished training but there may be left over trees that would disrupt the results
+	//we could also just leave these and check for differences in paramsets, but this seems less error-prone
+
+	while (std::filesystem::remove( treeDir / ("tree" + std::to_string(nTrees+1) + ".out") )) {
+		nTrees++;
+	}
+
 	return 0;
 }
 

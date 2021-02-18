@@ -23,6 +23,7 @@ int main(int argc, char* argv[]) {
 	// #else
 	// std::cout << "unknown compile" <<std::endl;
 	// #endif
+	int nFolds = 3;
 
 	//load the parameters from the file
 	std::cout << "Using parameters from " << (std::string)argv[1] + "params.in" << std::endl;
@@ -37,12 +38,12 @@ int main(int argc, char* argv[]) {
 	}
 	paramfile.close();
 
-	psthSet** data = new psthSet*[3];
-	int** sampleCounts = new int*[3];
+	psthSet** data = new psthSet*[nFolds];
+	int** sampleCounts = new int*[nFolds];
 	std::filesystem::path* rootDir = new std::filesystem::path[3];
 	// int N;
 
-	for (int f=0;f<=2;f++) {
+	for (int f=0;f<nFolds;f++) {
 		std::string foldname = "fold" + std::to_string(f+1) + ".in";
 		std::ifstream infile(foldname,std::ios::binary);
 
@@ -78,7 +79,7 @@ int main(int argc, char* argv[]) {
 		int t = omp_get_thread_num();
 		// int err = 0;
 
-		for (size_t f=0; f<=2; f++) {
+		for (size_t f=0; f<nFolds; f++) {
 			Ensemble ensl(&p, data[f]->N, t, rootDir[f], ecoc);
 			psthSet datal(data[f]);
 
